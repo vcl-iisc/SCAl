@@ -62,7 +62,6 @@ def runExperiment():
         raise ValueError('Not valid sbn')
     # print(len(batchnorm_dataset))
     data_split = split_dataset(client_dataset, cfg['num_clients'], cfg['data_split_mode'])
-    print(len(data_split))
     if cfg['loss_mode'] != 'sup':
         metric = Metric({'train': ['Loss', 'Accuracy', 'PAccuracy', 'MAccuracy', 'LabelRatio'],
                          'test': ['Loss', 'Accuracy']})
@@ -125,6 +124,10 @@ def make_client(model, data_split):
     client = [None for _ in range(cfg['num_clients'])]
     for m in range(len(client)):
         client[m] = Client(client_id[m], model, {'train': data_split['train'][m], 'test': data_split['test'][m]})
+    num_supervised_clients = int(cfg['num_supervised_clients'])
+    client_id = torch.arange(cfg['num_clients'])[torch.randperm(cfg['num_clients'])[:num_supervised_clients]].tolist()
+    for i in range(num_supervised_clients):
+        client[client_id[i]].supervised = True
     return client
 
 
