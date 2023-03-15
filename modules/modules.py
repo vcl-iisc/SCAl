@@ -214,6 +214,7 @@ class Client:
             optimizer = make_optimizer(model.parameters(), 'local')
         self.optimizer_state_dict = save_optimizer_state_dict(optimizer.state_dict())
         self.active = False
+        self.supervised= False
         self.beta = torch.distributions.beta.Beta(torch.tensor([cfg['alpha']]), torch.tensor([cfg['alpha']]))
         self.verbose = cfg['verbose']
 
