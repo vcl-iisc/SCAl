@@ -65,8 +65,8 @@ def runExperiment():
     #     raise ValueError('Not valid sbn')
     # print(len(batchnorm_dataset))
     batchnorm_dataset = client_dataset['train']
-    # data_split = split_dataset(client_dataset, cfg['num_clients'], cfg['data_split_mode'])
-    data_split = split_class_dataset(client_dataset,cfg['data_split_mode'])
+    data_split = split_dataset(client_dataset, cfg['num_clients'], cfg['data_split_mode'])
+    # data_split = split_class_dataset(client_dataset,cfg['data_split_mode'])
     if cfg['loss_mode'] != 'sup':
         metric = Metric({'train': ['Loss', 'Accuracy', 'PAccuracy', 'MAccuracy', 'LabelRatio'],
                          'test': ['Loss', 'Accuracy']})
@@ -154,6 +154,7 @@ def train_client(batchnorm_dataset, client_dataset, server, client, optimizer, m
     for i in range(num_active_clients):
         client[client_id[i]].active = True
     # server.distribute(client, batchnorm_dataset)
+    print(f'traning the following clients{client_id}')
     server.distribute(client,batchnorm_dataset)
     num_active_clients = len(client_id)
     start_time = time.time()
