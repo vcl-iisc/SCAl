@@ -186,6 +186,8 @@ def separate_dataset(dataset, idx):
     separated_dataset.data = [dataset.data[int(s)] for s in idx]
     separated_dataset.target = [dataset.target[int(s)] for s in idx]
     separated_dataset.other['id'] = list(range(len(separated_dataset.data)))
+    transform = FixTransform(cfg['data_name'])
+    separated_dataset.transform = transform
     return separated_dataset
 
 
@@ -288,6 +290,10 @@ class FixTransform(object):
     def __init__(self, data_name):
         import datasets
         if data_name in ['CIFAR10', 'CIFAR100']:
+            self.normal = transforms.Compose(
+                                [transforms.ToTensor(),
+                                transforms.Normalize(*data_stats[data_name])
+                                ])
             self.weak = transforms.Compose([
                 transforms.RandomHorizontalFlip(),
                 transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
@@ -331,9 +337,10 @@ class FixTransform(object):
             raise ValueError('Not valid dataset')
 
     def __call__(self, input):
-        data = self.weak(input['data'])
-        aug = self.strong(input['data'])
-        input = {**input, 'data': data, 'aug': aug}
+        data = self.normal(input['data'])
+        augw = self.weak(input['data'])
+        augs = self.strong(input['data'])
+        input = {**input, 'data': data, 'augw': augw, 'augs':augs}
         return input
 
 class SimDataset(object):

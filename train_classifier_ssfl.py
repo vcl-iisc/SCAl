@@ -72,8 +72,8 @@ def runExperiment():
                          'test': ['Loss', 'Accuracy']})
     else:
         metric = Metric({'train': ['Loss', 'Accuracy'], 'test': ['Loss', 'Accuracy']})
-    if cfg['loss_mode'] == 'sim':
-        metric = Metric({'train': ['Loss', 'Accuracy'], 'test': ['Loss', 'Accuracy']})
+    # if cfg['loss_mode'] == 'sim':
+    #     metric = Metric({'train': ['Loss', 'Accuracy'], 'test': ['Loss', 'Accuracy']})
     # print(metric.metric_name['train'])
     if cfg['resume_mode'] == 1:
         result = resume(cfg['model_tag'])
@@ -163,6 +163,7 @@ def train_client(batchnorm_dataset, client_dataset, server, client, optimizer, m
         m = client_id[i]
         # print(type(client[m].data_split['train']))
         dataset_m = separate_dataset(client_dataset, client[m].data_split['train'])
+        # print(cfg)
         if 'batch' not in cfg['loss_mode'] and 'frgd' not in cfg['loss_mode'] and 'fmatch' not in cfg['loss_mode']:
             dataset_m = client[m].make_dataset(dataset_m, metric, logger)
         if dataset_m is not None:

@@ -224,13 +224,13 @@ class Client:
         return hard_pseudo_label, mask
 
     def make_dataset(self, dataset, metric, logger):
-        if 'sup' in cfg['loss_mode'] or 'sim' in cfg['loss_mode']:
+        if 'sup' in cfg['loss_mode']:# or 'sim' in cfg['loss_mode']:
             return dataset
         elif 'fix' in cfg['loss_mode']:
             with torch.no_grad():
                 data_loader = make_data_loader({'train': dataset}, 'global', shuffle={'train': False})['train']
                 model = eval('models.{}(track=True).to(cfg["device"])'.format(cfg['model_name']))
-                model.load_state_dict(self.model_state_dict)
+                model.load_state_dict(self.model_state_dict,strict=False)
                 model.train(False)
                 output = []
                 target = []
@@ -266,6 +266,52 @@ class Client:
                     return fix_dataset, mix_dataset
                 else:
                     return None
+        elif 'sim' in cfg['loss_mode']:
+            with torch.no_grad():
+                data_loader = make_data_loader({'train': dataset}, 'global', shuffle={'train': False})['train']
+                model = eval('models.{}(track=True).to(cfg["device"])'.format(cfg['model_name']))
+                model.load_state_dict(self.model_state_dict,strict=False)
+                model.train(False)
+                cfg['pred'] = True
+                output = []
+                target = []
+                for i, input in enumerate(data_loader):
+                    input = collate(input)
+                    # input['loss_mode'] = cfg['loss_mode']
+                    input = to_device(input, cfg['device'])
+                    # input['supervised_mode'] = self.supervised
+                    # input['batch_size'] = cfg['client']['batch_size']['train']
+                    output_ = model(input)
+                    output_i = output_['target']
+                    target_i = input['target']
+                    output.append(output_i.cpu())
+                    target.append(target_i.cpu())
+                output_, input_ = {}, {}
+                output_['target'] = torch.cat(output, dim=0)
+                input_['target'] = torch.cat(target, dim=0)
+                output_['target'] = F.softmax(output_['target'], dim=-1)
+                new_target, mask = self.make_hard_pseudo_label(output_['target'])
+                output_['mask'] = mask
+                evaluation = metric.evaluate(['PAccuracy', 'MAccuracy', 'LabelRatio'], input_, output_)
+                logger.append(evaluation, 'train', n=len(input_['target']))
+                cfg['pred'] = False
+                if torch.any(mask):
+                    fix_dataset = copy.deepcopy(dataset)
+                    fix_dataset.target = new_target.tolist()
+                    mask = mask.tolist()
+                    fix_dataset.data = list(compress(fix_dataset.data, mask))
+                    fix_dataset.target = list(compress(fix_dataset.target, mask))
+                    fix_dataset.other = {'id': list(range(len(fix_dataset.data)))}
+                    if 'mix' in cfg['loss_mode']:
+                        mix_dataset = copy.deepcopy(dataset)
+                        mix_dataset.target = new_target.tolist()
+                        mix_dataset = MixDataset(len(fix_dataset), mix_dataset)
+                    else:
+                        mix_dataset = None
+                    return fix_dataset, mix_dataset,dataset
+                else:
+                    return None
+
         else:
             raise ValueError('Not valid client loss mode')
 
@@ -301,7 +347,8 @@ class Client:
                     logger.append(evaluation, 'train', n=input_size)
                     if num_batches is not None and i == num_batches - 1:
                         break
-        elif cfg['loss_mode'] == 'sim':
+        elif 'sim' in cfg['loss_mode']:
+            _,_,dataset = dataset
             data_loader = make_data_loader({'train': dataset}, 'client')['train']
             model = eval('models.{}().to(cfg["device"])'.format(cfg['model_name']))
             model.load_state_dict(self.model_state_dict, strict=False)
@@ -321,19 +368,22 @@ class Client:
                 num_batches = None
             for epoch in range(1, cfg['client']['num_epochs'] + 1):
                 for i, input in enumerate(data_loader):
+                    # print(type(input['data']))
                     input = collate(input)
                     input_size = input['data'].size(0)
-                    input['loss_mode'] = cfg['loss_mode']
+                    input['loss_mode'] = 'sim'
                     input = to_device(input, cfg['device'])
                     input['supervised_mode'] = self.supervised
                     input['batch_size'] = cfg['client']['batch_size']['train']
                     optimizer.zero_grad()
+                    # print(type(input['data']))
                     output = model(input)
                     # print(output.keys())
                     output['loss'].backward()
                     torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
                     optimizer.step()
-                    evaluation = metric.evaluate(metric.metric_name['train'], input, output)
+                    # evaluation = metric.evaluate(metric.metric_name['train'], input, output)
+                    evaluation = metric.evaluate(['Loss', 'Accuracy'], input, output)
                     logger.append(evaluation, 'train', n=input_size)
                     if num_batches is not None and i == num_batches - 1:
                         break
@@ -353,6 +403,7 @@ class Client:
                 num_batches = None
             for epoch in range(1, cfg['client']['num_epochs'] + 1):
                 for i, input in enumerate(fix_data_loader):
+                    
                     input = collate(input)
                     input_size = input['data'].size(0)
                     input['loss_mode'] = cfg['loss_mode']

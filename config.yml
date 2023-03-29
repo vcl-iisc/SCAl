@@ -22,4 +22,5 @@ log_interval: 0.25
 device: cuda
 world_size: 1
 resume_mode: 0
+threshold : .095
 verbose: False
