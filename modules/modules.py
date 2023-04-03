@@ -502,7 +502,87 @@ class Client:
         self.optimizer_state_dict = save_optimizer_state_dict(optimizer.state_dict())
         self.model_state_dict = save_model_state_dict(model.state_dict())
         return
-
+    def trainntune(self, dataset, lr, metric, logger,epoch):
+        if cfg['loss_mode'] == 'sup':
+            data_loader = make_data_loader({'train': dataset}, 'client')['train']
+            model = eval('models.{}().to(cfg["device"])'.format(cfg['model_name']))
+            model.load_state_dict(self.model_state_dict, strict=False)
+            self.optimizer_state_dict['param_groups'][0]['lr'] = lr
+            optimizer = make_optimizer(model.parameters(), 'local')
+            optimizer.load_state_dict(self.optimizer_state_dict)
+            model.train(True)
+            # print(f'is client number {self.client_id} a supervised model={self.supervised}')
+            # for v,k in model.named_parameters():
+            #     print(v)
+            if cfg['client']['num_epochs'] == 1:
+                num_batches = int(np.ceil(len(data_loader) * float(cfg['local_epoch'][0])))
+            else:
+                num_batches = None
+            for epoch in range(1, cfg['client']['num_epochs'] + 1):
+                for i, input in enumerate(data_loader):
+                    input = collate(input)
+                    input_size = input['data'].size(0)
+                    input['loss_mode'] = cfg['loss_mode']
+                    input = to_device(input, cfg['device'])
+                    optimizer.zero_grad()
+                    output = model(input)
+                    # print(output.keys())
+                    output['loss'].backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+                    optimizer.step()
+                    evaluation = metric.evaluate(metric.metric_name['train'], input, output)
+                    logger.append(evaluation, 'train', n=input_size)
+                    if num_batches is not None and i == num_batches - 1:
+                        break
+        elif 'sim' in cfg['loss_mode']:
+            _,_,dataset = dataset
+            data_loader = make_data_loader({'train': dataset}, 'client')['train']
+            model = eval('models.{}().to(cfg["device"])'.format(cfg['model_name']))
+            model.load_state_dict(self.model_state_dict, strict=False)
+            self.optimizer_state_dict['param_groups'][0]['lr'] = lr
+            optimizer = make_optimizer(model.parameters(), 'local')
+            optimizer.load_state_dict(self.optimizer_state_dict)
+            model.train(True)
+            g_epoch = epoch
+            # for v,k in model.named_parameters():
+            #     print(f'nmae{v} grad required{k.requires_grad}')
+            # if self.supervised == False:
+            #     model.linear.requires_grad_(False)
+            if epoch <= cfg['switch_epoch'] :
+                model.linear.requires_grad_(False)
+            elif epoch > cfg['switch_epoch']:
+                model.projection.requires_grad_(False)
+            # for v,k in model.named_parameters():
+            #     print(f'nmae{v} grad required{k.requires_grad}')
+            if cfg['client']['num_epochs'] == 1:
+                num_batches = int(np.ceil(len(data_loader) * float(cfg['local_epoch'][0])))
+            else:
+                num_batches = None
+            for epoch in range(1, cfg['client']['num_epochs'] + 1):
+                for i, input in enumerate(data_loader):
+                    input = collate(input)
+                    input_size = input['data'].size(0)
+                    input['loss_mode'] = cfg['loss_mode']
+                    input = to_device(input, cfg['device'])
+                    input['supervised_mode'] = self.supervised
+                    input['batch_size'] = cfg['client']['batch_size']['train']
+                    input['epoch'] = g_epoch
+                    optimizer.zero_grad()
+                    output = model(input)
+                    # print(output.keys())
+                    output['loss'].backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+                    optimizer.step()
+                    # evaluation = metric.evaluate(metric.metric_name['train'], input, output)
+                    evaluation = metric.evaluate(['Loss', 'Accuracy'], input, output)
+                    logger.append(evaluation, 'train', n=input_size)
+                    if num_batches is not None and i == num_batches - 1:
+                        break
+        else:
+            raise ValueError('Not valid client loss mode')
+        self.optimizer_state_dict = save_optimizer_state_dict(optimizer.state_dict())
+        self.model_state_dict = save_model_state_dict(model.state_dict())
+        return
 
 def save_model_state_dict(model_state_dict):
     return {k: v.cpu() for k, v in model_state_dict.items()}

@@ -136,40 +136,98 @@ class ResNet(nn.Module):
         x = self.linear(x)
         return x , z
 
+    # def forward(self, input):
+    #     output = {}
+    #     if 'sim' in cfg['loss_mode']:
+    #         if cfg['pred'] == True:
+    #             output['target'],_ = self.f(input['augw'])
+    #         else:
+    #             transform=SimDataset('CIFAR10')
+    #             input = transform(input)
+    #             # print(input.keys())
+    #             if 'sim' in cfg['loss_mode'] and input['supervised_mode']!= True:
+    #                 _,output['sim_vector_i'] = self.f(input['aug1'])
+    #                 _,output['sim_vector_j'] = self.f(input['aug2'])
+    #                 output['target'],_ = self.f(input['data'])
+    #             elif 'sim' in cfg['loss_mode'] and input['supervised_mode'] == True:
+    #                 _,output['sim_vector_i'] = self.f(input['aug1'])
+    #                 _,output['sim_vector_j'] = self.f(input['aug2'])
+    #                 output['target'],_ = self.f(input['data'])
+    #     else:
+    #         output['target'],_ = self.f(input['data'])
+    #     # output['target']= self.f(input['data'])
+    #     if 'loss_mode' in input and 'test' not in input and cfg['pred'] == False:
+    #         if input['loss_mode'] == 'sup':
+    #             output['loss'] = loss_fn(output['target'], input['target'])
+    #         elif input['loss_mode'] == 'sim':
+    #             if input['supervised_mode'] == True:
+    #                 criterion = SimCLR_Loss(input['batch_size'])
+    #                 output['classification_loss'] = loss_fn(output['target'], input['target'])
+    #                 output['sim_loss'] =  criterion(output['sim_vector_i'],output['sim_vector_j'])
+    #                 output['loss'] = output['classification_loss']+output['sim_loss']
+    #             elif input['supervised_mode'] == False:
+    #                 criterion = SimCLR_Loss(input['batch_size'])
+    #                 # output['classification_loss'] = loss_fn(output['target'], input['target'])
+    #                 output['sim_loss'] =  criterion(output['sim_vector_i'],output['sim_vector_j'])
+    #                 output['loss'] = output['sim_loss']
+    #         elif input['loss_mode'] == 'fix':
+    #             aug_output = self.f(input['aug'])
+    #             output['loss'] = loss_fn(aug_output, input['target'].detach())
+    #         elif input['loss_mode'] == 'fix-mix':
+    #             aug_output = self.f(input['aug'])
+    #             output['loss'] = loss_fn(aug_output, input['target'].detach())
+    #             mix_output = self.f(input['mix_data'])
+    #             output['loss'] += input['lam'] * loss_fn(mix_output, input['mix_target'][:, 0].detach()) + (
+    #                     1 - input['lam']) * loss_fn(mix_output, input['mix_target'][:, 1].detach())
+
+    #     else:
+    #         if not torch.any(input['target'] == -1):
+    #             output['loss'] = loss_fn(output['target'], input['target'])
+    #     return output
     def forward(self, input):
         output = {}
-        if 'sim' in cfg['loss_mode']:
-            if cfg['pred'] == True:
-                output['target'],_ = self.f(input['augw'])
-            else:
-                transform=SimDataset('CIFAR10')
-                input = transform(input)
-                # print(input.keys())
-                if 'sim' in cfg['loss_mode'] and input['supervised_mode']!= True:
-                    _,output['sim_vector_i'] = self.f(input['aug1'])
-                    _,output['sim_vector_j'] = self.f(input['aug2'])
-                    output['target'],_ = self.f(input['data'])
-                elif 'sim' in cfg['loss_mode'] and input['supervised_mode'] == True:
-                    _,output['sim_vector_i'] = self.f(input['aug1'])
-                    _,output['sim_vector_j'] = self.f(input['aug2'])
-                    output['target'],_ = self.f(input['data'])
+        if 'sim' in input['loss_mode']:
+            transform=SimDataset('CIFAR10')
+            input = transform(input)
+            # print(input.keys())
+            if 'sim' in input['loss_mode'] and input['supervised_mode']!= True:
+                _,output['sim_vector_i'] = self.f(input['aug1'])
+                _,output['sim_vector_j'] = self.f(input['aug2'])
+                output['target'],_ = self.f(input['data'])
+            elif  'sim' in input['loss_mode'] and input['supervised_mode'] == True:
+                _,output['sim_vector_i'] = self.f(input['aug1'])
+                _,output['sim_vector_j'] = self.f(input['aug2'])
+                output['target'],_ = self.f(input['data'])
         else:
             output['target'],_ = self.f(input['data'])
         # output['target']= self.f(input['data'])
-        if 'loss_mode' in input and 'test' not in input and cfg['pred'] == False:
+        if 'loss_mode' in input and 'test' not in input:
             if input['loss_mode'] == 'sup':
                 output['loss'] = loss_fn(output['target'], input['target'])
-            elif input['loss_mode'] == 'sim':
-                if input['supervised_mode'] == True:
-                    criterion = SimCLR_Loss(input['batch_size'])
-                    output['classification_loss'] = loss_fn(output['target'], input['target'])
-                    output['sim_loss'] =  criterion(output['sim_vector_i'],output['sim_vector_j'])
-                    output['loss'] = output['classification_loss']+output['sim_loss']
-                elif input['supervised_mode'] == False:
-                    criterion = SimCLR_Loss(input['batch_size'])
-                    # output['classification_loss'] = loss_fn(output['target'], input['target'])
-                    output['sim_loss'] =  criterion(output['sim_vector_i'],output['sim_vector_j'])
-                    output['loss'] = output['sim_loss']
+            elif 'sim' in input['loss_mode']:
+                if 'ft' in input['loss_mode']:
+                    if input['epoch']<= cfg['switch_epoch']:
+                        # epochl=input['epoch']
+                        # print(f'{epochl} training with Sim loss')
+                        criterion = SimCLR_Loss(input['batch_size'])
+                        # output['classification_loss'] = loss_fn(output['target'], input['target'])
+                        output['sim_loss'] =  criterion(output['sim_vector_i'],output['sim_vector_j'])
+                        output['loss'] = output['sim_loss']
+                    elif input['epoch'] > cfg['switch_epoch']:
+                        # epochl=input['epoch']
+                        # print(f'{epochl} training with CE loss')
+                        output['loss'] = loss_fn(output['target'], input['target'])
+                else:    
+                    if input['supervised_mode'] == True:
+                        criterion = SimCLR_Loss(input['batch_size'])
+                        output['classification_loss'] = loss_fn(output['target'], input['target'])
+                        output['sim_loss'] =  criterion(output['sim_vector_i'],output['sim_vector_j'])
+                        output['loss'] = output['classification_loss']+output['sim_loss']
+                    elif input['supervised_mode'] == False:
+                        criterion = SimCLR_Loss(input['batch_size'])
+                        # output['classification_loss'] = loss_fn(output['target'], input['target'])
+                        output['sim_loss'] =  criterion(output['sim_vector_i'],output['sim_vector_j'])
+                        output['loss'] = output['sim_loss']
             elif input['loss_mode'] == 'fix':
                 aug_output = self.f(input['aug'])
                 output['loss'] = loss_fn(aug_output, input['target'].detach())
