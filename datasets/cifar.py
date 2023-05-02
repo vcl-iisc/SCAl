@@ -26,6 +26,7 @@ class CIFAR10(Dataset):
         self.other = {'id': id}
 
     def __getitem__(self, index):
+        # print(self.data[index].shape,type(self.data[index]))
         data, target = Image.fromarray(self.data[index]), torch.tensor(self.target[index])
         other = {k: torch.tensor(self.other[k][index]) for k in self.other}
         input = {**other, 'data': data, 'target': target}

@@ -3,6 +3,7 @@ import torch
 import numpy as np
 import models
 from config import cfg
+from Gausian import GaussianBlur
 from torchvision import transforms
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.dataloader import default_collate
@@ -344,19 +345,23 @@ class FixTransform(object):
         return input
 
 class SimDataset(object):
-    def __init__(self, data_name,transform_type='sim' ,s=0.5):
+    def __init__(self, data_name,transform_type='sim' ,s=1,size=32):
         import datasets
         self.s=s
         if data_name in ['CIFAR10', 'CIFAR100']:
             if transform_type == 'sim':
                 self.augment = transforms.Compose([transforms.ToPILImage(),
-                                                transforms.RandomHorizontalFlip(0.5),
+                        
                                                 transforms.RandomResizedCrop(32,(0.8,1.0)),
+                                                transforms.RandomHorizontalFlip(0.5),
                                                 transforms.Compose([transforms.RandomApply([transforms.ColorJitter(0.8*self.s, 
                                                                                                                     0.8*self.s, 
                                                                                                                     0.8*self.s, 
                                                                                                                     0.2*self.s)], p = 0.8),
-                                                                    transforms.RandomGrayscale(p=0.2)
+                                                                    transforms.RandomGrayscale(p=0.2),
+                                                                    # GaussianBlur(kernel_size=int(0.1 * size)),
+                                                                    transforms.GaussianBlur(kernel_size=int(0.1 * size)),
+
                                                                     ]),
                                 transforms.ToTensor(),
                                 transforms.Normalize(*data_stats[data_name])
@@ -390,7 +395,8 @@ class MixDataset(Dataset):
     def __getitem__(self, index):
         index = torch.randint(0, len(self.dataset), (1,)).item()
         input = self.dataset[index]
-        input = {'data': input['data'], 'target': input['target']}
+        # input = {'data': input['data'], 'target': input['target']}
+        input = {'data': input['data'], 'augw': input['augw'], 'augs':input['augs'],'target': input['target']}
         return input
 
     def __len__(self):

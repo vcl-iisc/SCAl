@@ -127,8 +127,8 @@ def process_control():
     cfg['unsup_ratio'] = 1
     if 'loss_mode' in cfg['control']:
         cfg['loss_mode'] = cfg['control']['loss_mode']
-        if 'fix' in cfg['loss_mode']:
-            cfg['threshold'] = float(cfg['control']['loss_mode'].split('-')[0].split('@')[1])
+        # if 'fix' in cfg['loss_mode']:
+        #     cfg['threshold'] = float(cfg['control']['loss_mode'].split('-')[2].split('@')[1])
     if 'num_clients' in cfg['control']:
         cfg['num_clients'] = int(cfg['control']['num_clients'])
         cfg['active_rate'] = float(cfg['control']['active_rate'])
@@ -153,7 +153,7 @@ def process_control():
         cfg['client']['num_epochs'] = int(np.ceil(float(cfg['local_epoch'][0])))
         cfg['local'] = {}
         cfg['local']['optimizer_name'] = 'SGD'
-        cfg['local']['lr'] = 3e-2
+        cfg['local']['lr'] = 9e-2
         cfg['local']['momentum'] = 0.9
         cfg['local']['weight_decay'] = 5e-4
         cfg['local']['nesterov'] = True
@@ -166,8 +166,8 @@ def process_control():
         cfg['global']['momentum'] = cfg['gm']
         cfg['global']['weight_decay'] = 0
         cfg['global']['nesterov'] = False
-        cfg['global']['scheduler_name'] = 'CosineAnnealingLR'
-        # cfg['global']['scheduler_name'] = 'ExponentialLR'
+        # cfg['global']['scheduler_name'] = 'CosineAnnealingLR'
+        cfg['global']['scheduler_name'] = 'ExponentialLR'
         cfg['alpha'] = 0.75
     else:
         model_name = cfg['model_name']

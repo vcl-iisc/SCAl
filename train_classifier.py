@@ -45,13 +45,14 @@ def runExperiment():
     # print(len(supervised_idx))
     data_loader = make_data_loader(dataset, 'global')
     model = eval('models.{}().to(cfg["device"])'.format(cfg['model_name']))
+    net = eval('models.{}().to(cfg["device"])'.format(cfg['model_name']))
     # print(model)
     # print(cfg['local'].keys())
     optimizer = make_optimizer(model.parameters(), 'local')
     scheduler = make_scheduler(optimizer, 'global')
     metric = Metric({'train': ['Loss', 'Accuracy'], 'test': ['Loss', 'Accuracy']})
     if cfg['resume_mode'] == 1:
-        result = resume(cfg['model_tag'])
+        result = resume(cfg['model_tag'],'best')
         last_epoch = result['epoch']
         if last_epoch > 1:
             model.load_state_dict(result['model_state_dict'])
@@ -67,6 +68,7 @@ def runExperiment():
         model = torch.nn.DataParallel(model, device_ids=list(range(cfg['world_size'])))
     cfg['model_name'] = 'global'
     # print(list(model.buffers()))
+    cfg['global']['num_epochs'] = cfg['cycles']  
     for epoch in range(last_epoch, cfg[cfg['model_name']]['num_epochs'] + 1):
         # cfg['model_name'] = 'local'
         logger.safe(True)
@@ -95,6 +97,122 @@ def runExperiment():
                         './output/model/{}_best.pt'.format(cfg['model_tag']))
         logger.reset()
     logger.safe(False)
+    #Get Class impressions
+    cfg['loss_mode'] = 'gen'
+    
+    net.load_state_dict(result['model_state_dict'])
+    # net.load_state_dict(result['model_state_dict'])
+    net.to(cfg['device'])
+    net.eval()
+
+    # reserved to compute test accuracy on generated images by different networks
+    net_verifier = None
+    args = dict()
+    args['verifier'] = False
+    args['adi_scale'] = 0
+    # if args.verifier and args.adi_scale == 0:
+    #     # if multiple GPUs are used then we can change code to load different verifiers to different GPUs
+    #     if args.local_rank == 0:
+    #         print("loading verifier: ", args.verifier_arch)
+    #         net_verifier = models.__dict__[args.verifier_arch](pretrained=True).to(cfg['device'])
+    #         net_verifier.eval()
+
+    #         if use_fp16:
+    #             net_verifier = net_verifier.half()
+
+    # if args.adi_scale != 0.0:
+    #     student_arch = "resnet18"
+    #     net_verifier = models.__dict__[student_arch](pretrained=True).to(device)
+    #     net_verifier.eval()
+
+    #     if use_fp16:
+    #         net_verifier, _ = amp.initialize(net_verifier, [], opt_level="O2")
+
+    #     net_verifier = net_verifier.to(device)
+    #     net_verifier.train()
+
+    #     if use_fp16:
+    #         for module in net_verifier.modules():
+    #             if isinstance(module, nn.BatchNorm2d):
+    #                 module.eval().half()
+
+    from deepinversion import DeepInversionClass
+    from cifar10inversion import get_images
+    # exp_name = args.exp_name
+    exp_name = 'rn9_test3_inversion'
+    # final images will be stored here:
+    adi_data_path = "./final_images/%s"%exp_name
+    # temporal data and generations will be stored here
+    exp_name = "generations/%s"%exp_name
+
+    args['iterations'] = 200000
+    args['start_noise'] = True
+    # args.detach_student = False
+
+    args['resolution'] = 32
+    # bs = args.bs
+    bs = 256
+    jitter = 30
+    parameters = dict()
+    parameters["resolution"] = 32
+    parameters["random_label"] = False
+    parameters["start_noise"] = True
+    parameters["detach_student"] = False
+    parameters["do_flip"] = False
+    # parameters["do_flip"] = args.do_flip
+    # parameters["random_label"] = args.random_label
+    parameters["random_label"] = True
+    parameters["store_best_images"] = True
+    # parameters["store_best_images"] = args.store_best_images
+
+    criterion = torch.nn.CrossEntropyLoss()
+
+    # coefficients = dict()
+    # coefficients["r_feature"] = args.r_feature
+    # coefficients["first_bn_multiplier"] = args.first_bn_multiplier
+    # coefficients["tv_l1"] = args.tv_l1
+    # coefficients["tv_l2"] = args.tv_l2
+    # coefficients["l2"] = args.l2
+    # coefficients["lr"] = args.lr
+    # coefficients["main_loss_multiplier"] = args.main_loss_multiplier
+    # coefficients["adi_scale"] = args.adi_scale
+    coefficients = dict()
+    coefficients["r_feature"] = 0.01    
+    coefficients["first_bn_multiplier"] = 10
+    coefficients["tv_l1"] =0.0
+    coefficients["tv_l2"] =0.0001
+    coefficients["l2"] = 0.00001  
+    coefficients["lr"] = 0.25
+    coefficients["main_loss_multiplier"] = 1
+    coefficients["adi_scale"] = 0.0
+    network_output_function = lambda x: x
+
+    # check accuracy of verifier
+    # if args.verifier:
+    #     hook_for_display = lambda x,y: validate_one(x, y, net_verifier)
+    # else:
+    #     hook_for_display = Nonee?
+    hook_for_display = None
+    ###################################################################
+    criterion = torch.nn.CrossEntropyLoss()
+    discp = 'cifar10_50k'
+    prefix = "runs/data_generation/"+discp+"/"
+
+    for create_folder in [prefix, prefix+"/best_images/"]:
+        if not os.path.exists(create_folder):
+            os.makedirs(create_folder)
+    # place holder for inputs
+    data_type = torch.float
+    inputs = torch.randn((bs, 3, 32, 32), requires_grad=True, device=cfg['device'], dtype=data_type)
+    net_student=None
+    train_writer = None  # tensorboard writter
+    global_iteration = 0
+    print("Starting model inversion")
+    inputs = get_images(net=net, bs=bs, epochs=args['iterations'], idx=0,
+                        net_student=net_student, prefix=prefix, competitive_scale=0.0,
+                        train_writer=train_writer, global_iteration=global_iteration, use_amp= False,
+                        optimizer=torch.optim.Adam([inputs], lr=0.1), inputs=inputs, bn_reg_scale=10,
+                        var_scale=25e-6, random_labels=False, l2_coeff=0.0)
     return
 
 

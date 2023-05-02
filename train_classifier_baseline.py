@@ -28,7 +28,7 @@ def main():
     process_control()
     seeds = list(range(cfg['init_seed'], cfg['init_seed'] + cfg['num_experiments']))
     for i in range(cfg['num_experiments']):
-        model_tag_list = [str(seeds[i]), cfg['data_name'], cfg['model_name'], cfg['control_name'],cfg['data_mode']]
+        model_tag_list = [str(seeds[i]),cfg['d_mode'], cfg['model_name'], cfg['control_name']]
         cfg['model_tag'] = '_'.join([x for x in model_tag_list if x])
         print('Experiment: {}'.format(cfg['model_tag']))
         runExperiment()
@@ -52,12 +52,14 @@ def runExperiment():
     # print(len(client_dataset['train'].data))
     #data_loader = make_data_loader(server_dataset, 'global')
     data_loader = make_data_loader(client_dataset, 'global')
-    # cfg["device"] = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = eval('models.{}().to(cfg["device"])'.format(cfg['model_name']))
-    # model = eval('models.{}()'.format(cfg['model_name']))
-    # model = torch.nn.DataParallel(model,device_ids = [0, 1])
-    # model.to(cfg["device"])
-    # cfg['world_size']=2
+    if cfg['world_size']==1:
+        model = eval('models.{}().to(cfg["device"])'.format(cfg['model_name']))
+    elif cfg['world_size']>1:
+        cfg["device"] = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = eval('models.{}()'.format(cfg['model_name']))
+        model = torch.nn.DataParallel(model,device_ids = [0, 1])
+        model.to(cfg["device"])
+    
     # print(model)
     optimizer = make_optimizer(model.parameters(), 'local')
     scheduler = make_scheduler(optimizer, 'global')
@@ -73,9 +75,9 @@ def runExperiment():
     batchnorm_dataset = client_dataset['train']
     # data_split = split_dataset(client_dataset, cfg['num_clients'], cfg['data_split_mode'])
     # data_split = split_class_dataset(client_dataset,cfg['data_split_mode'])
-    if cfg['data_mode'] == 'old':
+    if cfg['d_mode'] == 'old':
         data_split = split_dataset(client_dataset, cfg['num_clients'], cfg['data_split_mode'])
-    elif cfg['data_mode'] == 'new':
+    elif cfg['d_mode'] == 'new':
         data_split = split_class_dataset(client_dataset,cfg['data_split_mode'])
     if cfg['loss_mode'] != 'sup':
         metric = Metric({'train': ['Loss', 'Accuracy', 'PAccuracy', 'MAccuracy', 'LabelRatio'],
@@ -90,7 +92,7 @@ def runExperiment():
         last_epoch = result['epoch']
         if last_epoch > 1:
             data_split = result['data_split']
-            # supervised_idx = result['supervised_idx']
+            supervised_clients = result['supervised_clients']
             server = result['server']
             client = result['client']
             optimizer.load_state_dict(result['optimizer_state_dict'])
@@ -105,6 +107,7 @@ def runExperiment():
         server = make_server(model)
         client,supervised_clients = make_client(model, data_split)
         logger = make_logger(os.path.join('output', 'runs', 'train_{}'.format(cfg['model_tag'])))
+    cfg['global']['num_epochs'] = cfg['cycles']
     for epoch in range(last_epoch, cfg['global']['num_epochs'] + 1):
         train_client(batchnorm_dataset, client_dataset['train'], server, client, supervised_clients, optimizer, metric, logger, epoch)
         # if 'ft' in cfg and cfg['ft'] == 0:
@@ -118,6 +121,7 @@ def runExperiment():
         logger.reset()
         server.update(client)
         scheduler.step()
+        # print(server.model_state_dict.keys())
         model.load_state_dict(server.model_state_dict)
         test_model = make_batchnorm_stats(batchnorm_dataset, model, 'global')
         test(data_loader['test'], test_model, metric, logger, epoch)
@@ -128,7 +132,7 @@ def runExperiment():
         result = {'cfg': cfg, 'epoch': epoch + 1, 'server': server, 'client': client,
                   'optimizer_state_dict': optimizer.state_dict(),
                   'scheduler_state_dict': scheduler.state_dict(),
-                  'data_split': data_split, 'logger': logger}
+                  'data_split': data_split, 'logger': logger,'supervised_clients ':supervised_clients }
         save(result, './output/model/{}_checkpoint.pt'.format(cfg['model_tag']))
         if metric.compare(logger.mean['test/{}'.format(metric.pivot_name)]):
             metric.update(logger.mean['test/{}'.format(metric.pivot_name)])
