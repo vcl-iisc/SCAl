@@ -13,7 +13,9 @@ data_stats = {'MNIST': ((0.1307,), (0.3081,)), 'FashionMNIST': ((0.2860,), (0.35
               'CIFAR10': ((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
               'CIFAR100': ((0.5071, 0.4865, 0.4409), (0.2673, 0.2564, 0.2762)),
               'SVHN': ((0.4377, 0.4438, 0.4728), (0.1980, 0.2010, 0.1970)),
-              'STL10': ((0.4409, 0.4279, 0.3868), (0.2683, 0.2610, 0.2687))}
+              'STL10': ((0.4409, 0.4279, 0.3868), (0.2683, 0.2610, 0.2687)),
+              'USPS':((0.5),
+                             (0.5))}
 
 
 def fetch_dataset(data_name):
@@ -52,13 +54,14 @@ def fetch_dataset(data_name):
                                 'transform=datasets.Compose([transforms.ToTensor()]))'.format(data_name))
         dataset['test'] = eval('datasets.{}(root=root, split=\'test\', '
                                'transform=datasets.Compose([transforms.ToTensor()]))'.format(data_name))
-        dataset['train'].transform = datasets.Compose([
+        dataset['train'].transform = datasets.Compose([transforms.Grayscale(),
             transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
             transforms.ToTensor(),
-            transforms.Normalize(*data_stats[data_name])])
-        dataset['test'].transform = datasets.Compose([
+            transforms.Normalize((0.5),(0.5))])
+            # transforms.Normalize(*data_stats[data_name])])
+        dataset['test'].transform = datasets.Compose([transforms.Grayscale(),
             transforms.ToTensor(),
-            transforms.Normalize(*data_stats[data_name])])
+            transforms.Normalize((0.5), (0.5))])
     elif data_name in ['STL10']:
         dataset['train'] = eval('datasets.{}(root=root, split=\'train\', '
                                 'transform=datasets.Compose([transforms.ToTensor()]))'.format(data_name))
@@ -70,6 +73,19 @@ def fetch_dataset(data_name):
             transforms.ToTensor(),
             transforms.Normalize(*data_stats[data_name])])
         dataset['test'].transform = datasets.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(*data_stats[data_name])])
+    elif data_name in ['USPS']:
+        dataset['train'] = eval('datasets.{}(root=root, split=\'train\', '
+                                'transform=datasets.Compose([transforms.ToTensor()]))'.format(data_name))
+        dataset['test'] = eval('datasets.{}(root=root, split=\'test\', '
+                               'transform=datasets.Compose([transforms.ToTensor()]))'.format(data_name))
+        # dataset['train'].transform = datasets.Compose([
+        #     transforms.ToTensor(),
+        #     transforms.Normalize(*data_stats[data_name])])
+        dataset['train'].transform = datasets.Compose([transforms.Resize(32),
+            transforms.ToTensor()])
+        dataset['test'].transform = datasets.Compose([transforms.Resize(32),
             transforms.ToTensor(),
             transforms.Normalize(*data_stats[data_name])])
     else:
@@ -190,7 +206,14 @@ def separate_dataset(dataset, idx):
     transform = FixTransform(cfg['data_name'])
     separated_dataset.transform = transform
     return separated_dataset
-
+def separate_dataset_DA(dataset, idx,name=None):
+    separated_dataset = copy.deepcopy(dataset)
+    separated_dataset.data = [dataset.data[int(s)] for s in idx]
+    separated_dataset.target = [dataset.target[int(s)] for s in idx]
+    separated_dataset.other['id'] = list(range(len(separated_dataset.data)))
+    transform = FixTransform(name)
+    separated_dataset.transform = transform
+    return separated_dataset
 
 def separate_dataset_su(server_dataset, client_dataset=None, supervised_idx=None):
     if supervised_idx is None:
@@ -242,6 +265,29 @@ def seperate_sup_unsup(client_dataset):
         idx = torch.where(target == j)[0]
         
         for i in range(int(cfg['num_clients'])):
+            num_items_i = min(len(idx), num_supervised_per_class)
+            idx_i = idx[torch.randperm(len(idx))[:num_supervised_per_class]].tolist()
+            data_split[i].extend(idx_i)
+            idx = list(set(idx.tolist()) - set(idx_i))
+            idx = torch.Tensor(idx)
+        
+    return data_split
+def split_class_dataset_DA(dataset, data_split_mode = 'iid',split_num = 0):
+    data_split = {}
+    if data_split_mode == 'iid':
+        data_split['train'] = seperate_sup_unsup_DA(dataset['train'],split_num)
+        data_split['test'] = seperate_sup_unsup_DA(dataset['test'],split_num)
+    return data_split
+def seperate_sup_unsup_DA(client_dataset,split_num):
+    target = torch.tensor(client_dataset.target)
+    num_supervised_per_class = len(client_dataset)// (cfg['target_size']*split_num)
+    data_split={}
+    for i in range(int(split_num)):
+        data_split[i] = []
+    for j in range(cfg['target_size']):
+        idx = torch.where(target == j)[0]
+        
+        for i in range(int(split_num)):
             num_items_i = min(len(idx), num_supervised_per_class)
             idx_i = idx[torch.randperm(len(idx))[:num_supervised_per_class]].tolist()
             data_split[i].extend(idx_i)
@@ -309,18 +355,67 @@ class FixTransform(object):
                 transforms.Normalize(*data_stats[data_name])
             ])
         elif data_name in ['SVHN']:
+            self.normal = transforms.Compose(
+                                [transforms.Grayscale(),
+                                transforms.ToTensor(),
+                                transforms.Normalize((0.5),(0.5))
+                                # transforms.Normalize(*data_stats[data_name])
+                                ])
             self.weak = transforms.Compose([
+                transforms.Grayscale(),
                 transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
                 transforms.ToTensor(),
-                transforms.Normalize(*data_stats[data_name])
+                transforms.Normalize((0.5),(0.5))
+                # transforms.Normalize(*data_stats[data_name])
             ])
             self.strong = transforms.Compose([
                 transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
                 datasets.RandAugment(n=2, m=10),
+                transforms.Grayscale(),
+                transforms.ToTensor(),
+                transforms.Normalize((0.5),(0.5))
+                # transforms.Normalize(*data_stats[data_name])
+            ])
+        elif data_name in ['USPS']:
+            self.normal = transforms.Compose(
+                                [transforms.Resize(32),
+                                 transforms.ToTensor(),
+                                transforms.Normalize(*data_stats[data_name])
+                                ])
+            self.weak = transforms.Compose([transforms.Resize(32),
+                transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
+                transforms.ToTensor(),
+                transforms.Normalize(*data_stats[data_name])
+                
+            ])
+            self.strong = transforms.Compose([transforms.Resize(32),
+                transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
+                # datasets.RandAugment(n=2, m=10),
+                transforms.ToTensor(),
+                transforms.Normalize(*data_stats[data_name])
+            ])
+        elif data_name in ['MNIST']:
+            self.normal = transforms.Compose(
+                                [transforms.ToTensor(),
+                                transforms.Normalize(*data_stats[data_name])
+                                ])
+            self.weak = transforms.Compose([
+                transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
+                transforms.ToTensor(),
+                transforms.Normalize(*data_stats[data_name])
+                
+            ])
+            self.strong = transforms.Compose([
+                transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
+                # datasets.RandAugment(n=2, m=10),
                 transforms.ToTensor(),
                 transforms.Normalize(*data_stats[data_name])
             ])
         elif data_name in ['STL10']:
+            self.normal = transforms.Compose(
+                                [transforms.ToTensor(),
+                                transforms.Normalize(*data_stats[data_name])
+                                ])
             self.weak = transforms.Compose([
                 transforms.RandomHorizontalFlip(),
                 transforms.RandomCrop(96, padding=12, padding_mode='reflect'),
@@ -342,6 +437,7 @@ class FixTransform(object):
         augw = self.weak(input['data'])
         augs = self.strong(input['data'])
         input = {**input, 'data': data, 'augw': augw, 'augs':augs}
+        # input = {**input, 'data': data, 'augw': augw}
         return input
 
 class SimDataset(object):
@@ -397,6 +493,7 @@ class MixDataset(Dataset):
         input = self.dataset[index]
         # input = {'data': input['data'], 'target': input['target']}
         input = {'data': input['data'], 'augw': input['augw'], 'augs':input['augs'],'target': input['target']}
+        # input = {'data': input['data'], 'augw': input['augw'],'target': input['target']}
         return input
 
     def __len__(self):

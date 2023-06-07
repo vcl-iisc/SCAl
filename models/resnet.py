@@ -138,6 +138,7 @@ class ResNet(nn.Module):
     #     x = self.linear(x)
     #     return x , z
     def f(self, x,apply_softmax=False):
+        # print(x.shape)
         x = self.conv1(x)
         x = self.layer1(x)
         x = self.layer2(x)
@@ -232,6 +233,7 @@ class ResNet(nn.Module):
                     output['target'],__ = self.f(input['augw'])
         elif 'sup' in cfg['loss_mode'] and 'test' not in input:
             _,output['target'] = self.f(input['augw'])
+            # _,output['target'] = self.f(input['data'])
         elif 'fix' in cfg['loss_mode'] and 'test' not in input and cfg['pred'] == True:
             _,output['target'] = self.f(input['augw'])
         elif 'gen' in cfg['loss_mode']:

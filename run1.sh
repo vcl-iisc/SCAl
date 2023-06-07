@@ -1,1 +1,2 @@
-python train_classifier_ssfl.py --data_name CIFAR100 --model_name resnet9 --d_mode new --device cuda:0 --cycles 600 --control_name "150009_sup_100_0.1_iid_5-5_0.5_1" --resume_mode 1
+python train_classifier_ssFT.py --data_name CIFAR100 --model_name resnet9 --d_mode new --device cuda:0 --var_lr 0.09 --threshold 0.5 --scheduler_name  'ExponentialLR' --cycles 600 --switch_epoch_pred 70  --control_name "550032_sup-ft-fix_100_0.1_iid_5-5_0.07_1" --resume_mode 1
+python train_classifier_ssFT.py --data_name CIFAR100 --model_name resnet9 --d_mode new --device cuda:0 --var_lr 0.1 --threshold 0.5 --scheduler_name  'ExponentialLR' --cycles 600 --switch_epoch_pred 70  --control_name "650062_sup-ft-fix_100_0.1_iid_5-5_0.07_1" --resume_mode 1

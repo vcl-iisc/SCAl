@@ -255,7 +255,7 @@ class Server:
 
 
 class Client:
-    def __init__(self, client_id, model, data_split):
+    def __init__(self, client_id, model, data_split=None):
         self.client_id = client_id
         self.data_split = data_split
         # print(len(data_split['train']))
@@ -1020,7 +1020,7 @@ class Client:
         #             evaluation = metric.evaluate(['Loss', 'Accuracy'], input, output)
         #             logger.append(evaluation, 'train', n=input_size)
         #             if num_batches is not None and i == num_batches - 1:
-        #                 break
+                        break
         
         elif 'bmd' in cfg['loss_mode']:
             _,_,dataset = dataset
@@ -1155,7 +1155,11 @@ class Client:
                     # input = {'data': fix_input['data'], 'augw':fix_input['augw'], 'target': fix_input['target'], 'augs': fix_input['augs'],
                     #          'mix_data': mix_input['augw'], 'mix_target': mix_input['target']}
                     output = {}
-                    input = {'data': fix_input['augw'], 'target': fix_input['target'], 'aug': fix_input['augs'],
+                    if cfg['DA']==1:
+                        input = {'data': fix_input['augw'], 'target': fix_input['target'], 'aug': fix_input['augs'],
+                             'mix_data': mix_input['augs'], 'mix_target': mix_input['target'],'id':fix_input['id']}
+                    else:
+                        input = {'data': fix_input['augw'], 'target': fix_input['target'], 'aug': fix_input['augs'],
                              'mix_data': mix_input['augs'], 'mix_target': mix_input['target'],'id':fix_input['id']}
                     input = collate(input)
                     input_size = input['data'].size(0)
@@ -1172,6 +1176,9 @@ class Client:
                     output['loss']  = self.EL_loss(input['id'].detach(),aug_output, input['target'].detach())
                     output['loss'] += input['lam'] * self.EL_loss(input['id'].detach(),mix_output, input['mix_target'][:, 0].detach()) + (
                             1 - input['lam']) * self.EL_loss(input['id'].detach(),mix_output, input['mix_target'][:, 1].detach())
+                    # output['loss'] = loss_fn(aug_output, input['target'].detach())
+                    # output['loss'] += input['lam'] * loss_fn(mix_output, input['mix_target'][:, 0].detach()) + (
+                    #     1 - input['lam']) * loss_fn(mix_output, input['mix_target'][:, 1].detach())
                     output['loss'].backward()
                     torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
                     optimizer.step()

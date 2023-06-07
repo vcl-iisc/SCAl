@@ -106,9 +106,13 @@ def recur(fn, input, *args):
     return output
 
 
-def process_dataset(dataset):
+def process_dataset(dataset,dataset_unsup= None):
     cfg['data_size'] = {'train': len(dataset['train']), 'test': len(dataset['train'])}
     cfg['target_size'] = dataset['train'].target_size
+    if dataset_unsup is not None:
+        cfg['data_size_unsup'] = {'train': len(dataset_unsup['train']), 'test': len(dataset_unsup['train'])}
+        cfg['target_size_unsup'] = dataset_unsup['train'].target_size
+
     return
 
 
@@ -166,8 +170,8 @@ def process_control():
         cfg['global']['momentum'] = cfg['gm']
         cfg['global']['weight_decay'] = 0
         cfg['global']['nesterov'] = False
-        cfg['global']['scheduler_name'] = 'CosineAnnealingLR'
-        # cfg['global']['scheduler_name'] = 'ExponentialLR'
+        # cfg['global']['scheduler_name'] = 'CosineAnnealingLR'
+        cfg['global']['scheduler_name'] = 'ExponentialLR'
         # cfg['global']['scheduler_name'] = 'StepLR'
         cfg['alpha'] = 0.75
     else:

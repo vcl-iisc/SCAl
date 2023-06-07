@@ -135,11 +135,10 @@ def runExperiment():
                   'data_split': data_split, 'logger': logger,'supervised_clients':supervised_clients }
         if epoch %10 == 0 :
             save(result, './output/model/{}_checkpoint.pt'.format(cfg['model_tag']))
-
-        if metric.compare(logger.mean['test/{}'.format(metric.pivot_name)]):
-            metric.update(logger.mean['test/{}'.format(metric.pivot_name)])
-            shutil.copy('./output/model/{}_checkpoint.pt'.format(cfg['model_tag']),
-                        './output/model/{}_best.pt'.format(cfg['model_tag']))
+            if metric.compare(logger.mean['test/{}'.format(metric.pivot_name)]):
+                metric.update(logger.mean['test/{}'.format(metric.pivot_name)])
+                shutil.copy('./output/model/{}_checkpoint.pt'.format(cfg['model_tag']),
+                            './output/model/{}_best.pt'.format(cfg['model_tag']))
         logger.reset()
     return
 

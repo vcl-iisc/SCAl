@@ -56,11 +56,13 @@ def init_multi_cent_psd_label(model, dataloader, flag=False, flag_NRC=False, con
         
     all_gt_label = torch.cat(gt_label_stack, dim=0)
     # print(cls_out_stack)
+    
     all_emd_feat = torch.cat(emd_feat_stack, dim=0)
     all_emd_feat = all_emd_feat / torch.norm(all_emd_feat, p=2, dim=1, keepdim=True)
+    print(all_emd_feat.shape)
     # current VISDA-C k_seg is set to 3
     # topk_num = max(all_emd_feat.shape[0] // (args.class_num * args.topk_seg), 1)
-    topk_num = max(all_emd_feat.shape[0] // (cfg['target_size'] * 5), 1)
+    topk_num = max(all_emd_feat.shape[0] // (cfg['target_size'] * 3), 1)
     
     all_cls_out = torch.cat(cls_out_stack, dim=0)
     _, all_psd_label = torch.max(all_cls_out, dim=1)
@@ -69,7 +71,7 @@ def init_multi_cent_psd_label(model, dataloader, flag=False, flag_NRC=False, con
     # print(all_emd_feat.shape)
     # print(all_cls_out)
     #------------------------------------------------------------#
-    multi_cent_num = 3
+    multi_cent_num = 1
     feat_multi_cent = to_device(torch.zeros((cfg['target_size'], multi_cent_num, cfg['resnet9']['hidden_size'][3])),cfg['device'])
     faiss_kmeans = faiss.Kmeans(cfg['resnet9']['hidden_size'][3], multi_cent_num, niter=100, verbose=False, min_points_per_centroid=1)
     # print(faiss_kmeans)
@@ -98,9 +100,10 @@ def init_multi_cent_psd_label(model, dataloader, flag=False, flag_NRC=False, con
         feat_dist = torch.softmax(feat_dist, dim=1) # [N, C]
             
         _, all_psd_label = torch.max(feat_dist, dim=1)
+        # print(all_psd_label)
         acc = torch.sum(all_psd_label == all_gt_label) / len(all_gt_label)
         acc_list.append(acc)
-        
+        print(acc_list)
     # log = "acc:" + " --> ".join("{:.3f}".format(acc) for acc in acc_list)
     # psd_confu_mat = confusion_matrix(all_gt_label.cpu(), all_psd_label.cpu())
     # psd_acc_list = psd_confu_mat.diagonal()/psd_confu_mat.sum(axis=1) * 100

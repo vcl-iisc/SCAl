@@ -9,8 +9,8 @@ import torch.backends.cudnn as cudnn
 import numpy as np
 import random
 from config import cfg, process_args
-from data import fetch_dataset, split_dataset, make_data_loader, separate_dataset, separate_dataset_su, \
-    make_batchnorm_dataset_su, make_batchnorm_stats , split_class_dataset
+from data import fetch_dataset, split_dataset, make_data_loader, separate_dataset,separate_dataset_DA, separate_dataset_su, \
+    make_batchnorm_dataset_su, make_batchnorm_stats , split_class_dataset,split_class_dataset_DA
 from metrics import Metric
 from modules import Server, Client
 from utils import save, to_device, process_control, process_dataset, make_optimizer, make_scheduler, resume, collate
@@ -42,20 +42,21 @@ def runExperiment():
     torch.cuda.manual_seed(cfg['seed'])
     print(cfg['gm'])
     #server_dataset = fetch_dataset(cfg['data_name'])
-    client_dataset = fetch_dataset(cfg['data_name'])
+    client_dataset_sup = fetch_dataset(cfg['data_name'])
+    # print(cfg['data_name_unsup'])
+    client_dataset_unsup = fetch_dataset(cfg['data_name_unsup'])
     # print(len(server_dataset['train'].data))
     # print(len(client_dataset['train'].data))
     # for i in range(2):
     #     print(server_dataset['train'][i])
-    process_dataset(client_dataset)
+    process_dataset(client_dataset_sup,client_dataset_unsup)
     #server_dataset['train'], client_dataset['train'], supervised_idx = separate_dataset_su(server_dataset['train'],
                                                                                         #    client_dataset['train'])
     # print(len(server_dataset['train'].data))
     # print(len(client_dataset['train'].data))
     #data_loader = make_data_loader(server_dataset, 'global')
-    data_loader = make_data_loader(client_dataset, 'global')
-    cfg['local']['lr'] = cfg['var_lr']
-    cfg['global']['scheduler_name'] = cfg['scheduler_name']
+    data_loader_sup = make_data_loader(client_dataset_sup, 'global')
+    data_loader_unsup = make_data_loader(client_dataset_unsup, 'global')
     print(cfg)
     # model = eval('models.{}().to(cfg["device"])'.format(cfg['model_name']))
     if cfg['world_size']==1:
@@ -75,13 +76,17 @@ def runExperiment():
     # else:
     #     raise ValueError('Not valid sbn')
     # print(len(batchnorm_dataset))
-    batchnorm_dataset = client_dataset['train']
+    # batchnorm_dataset = client_dataset['train']
     # data_split = split_dataset(client_dataset, cfg['num_clients'], cfg['data_split_mode'])
     # data_split = split_class_dataset(client_dataset,cfg['data_split_mode'])
     if cfg['d_mode'] == 'old':
         data_split = split_dataset(client_dataset, cfg['num_clients'], cfg['data_split_mode'])
     elif cfg['d_mode'] == 'new':
-        data_split = split_class_dataset(client_dataset,cfg['data_split_mode'])
+        split_len_sup = int(np.ceil(cfg['active_rate'] * cfg['num_clients']))
+        split_len_unsup = int(cfg['num_clients'])-int(np.ceil(cfg['active_rate'] * cfg['num_clients']))
+        print(split_len_sup,split_len_unsup)
+        data_split_sup = split_class_dataset_DA(client_dataset_sup,cfg['data_split_mode'],split_len_sup)
+        data_split_unsup = split_class_dataset_DA(client_dataset_unsup,cfg['data_split_mode'],split_len_unsup)
     if cfg['loss_mode'] != 'sup':
         metric = Metric({'train': ['Loss', 'Accuracy', 'PAccuracy', 'MAccuracy', 'LabelRatio'],
                          'test': ['Loss', 'Accuracy']})
@@ -94,7 +99,8 @@ def runExperiment():
         result = resume(cfg['model_tag'])
         last_epoch = result['epoch']
         if last_epoch > 1:
-            data_split = result['data_split']
+            data_split_sup = result['data_split_sup']
+            data_split_unsup = result['data_split_unsup']
             # supervised_idx = result['supervised_idx']
             server = result['server']
             client = result['client']
@@ -105,12 +111,12 @@ def runExperiment():
             # cfg['loss_mode'] = 'alt-fix'
         else:
             server = make_server(model)
-            client,supervised_clients  = make_client(model, data_split)
+            client,supervised_clients  = make_client_DA(model, data_split_sup,data_split_unsup)
             logger = make_logger(os.path.join('output', 'runs', 'train_{}'.format(cfg['model_tag'])))
     else:
         last_epoch = 1
         server = make_server(model)
-        client,supervised_clients = make_client(model, data_split)
+        client,supervised_clients = make_client_DA(model, data_split_sup,data_split_unsup)
         logger = make_logger(os.path.join('output', 'runs', 'train_{}'.format(cfg['model_tag'])))
     cfg['global']['num_epochs'] = cfg['cycles']  
     mode = cfg['loss_mode']
@@ -126,7 +132,7 @@ def runExperiment():
                 # print('entered fix-mix',epoch)
                 cfg['loss_mode'] = 'alt-fix'
                 # cfg['loss_mode'] = 'fix-mix'
-        train_client(batchnorm_dataset, client_dataset['train'], server, client, supervised_clients, optimizer, metric, logger, epoch,mode)
+        train_client(client_dataset_sup['train'], client_dataset_unsup['train'], server, client, supervised_clients, optimizer, metric, logger, epoch,mode)
         # if 'ft' in cfg and cfg['ft'] == 0:
         #     train_server(server_dataset['train'], server, optimizer, metric, logger, epoch)
         #     logger.reset()
@@ -139,8 +145,9 @@ def runExperiment():
         server.update(client)
         scheduler.step()
         model.load_state_dict(server.model_state_dict)
-        test_model = make_batchnorm_stats(batchnorm_dataset, model, 'global')
-        test(data_loader['test'], test_model, metric, logger, epoch)
+        test_model = make_batchnorm_stats(client_dataset_unsup['train'], model, 'global')
+        test(data_loader_sup['test'], test_model, metric, logger, epoch,sup=True)
+        test(data_loader_unsup['test'], test_model, metric, logger, epoch)
         # result = {'cfg': cfg, 'epoch': epoch + 1, 'server': server, 'client': client,
         #           'optimizer_state_dict': optimizer.state_dict(),
         #           'scheduler_state_dict': scheduler.state_dict(),
@@ -152,7 +159,7 @@ def runExperiment():
         result = {'cfg': cfg, 'epoch': epoch + 1, 'server': server, 'client': client,
                   'optimizer_state_dict': optimizer.state_dict(),
                   'scheduler_state_dict': scheduler.state_dict(),
-                  'data_split': data_split, 'logger': logger,'supervised_clients':supervised_clients }
+                  'data_split_sup': data_split_sup,'data_split_unsup' : data_split_unsup, 'logger': logger,'supervised_clients':supervised_clients }
         # save(result, './output/model/{}_checkpoint.pt'.format(cfg['model_tag']))
         # if metric.compare(logger.mean['test/{}'.format(metric.pivot_name)]):
         #     metric.update(logger.mean['test/{}'.format(metric.pivot_name)])
@@ -184,23 +191,56 @@ def make_client(model, data_split):
     print(client_id)
     for i in range(num_supervised_clients):
         client[client_id[i]].supervised = True
+    
         
+    return client , client_id
+def make_client_DA(model, data_split_sup,data_split_unsup):
+    client_id = torch.arange(cfg['num_clients'])
+    client = [None for _ in range(cfg['num_clients'])]
+    for m in range(len(client)):
+        client[m] = Client(client_id[m], model)
+        # , {'train': data_split['train'][m], 'test': data_split['test'][m]}
+    num_supervised_clients = int(np.ceil(cfg['active_rate'] * cfg['num_clients']))
+    client_id = torch.arange(cfg['num_clients'])[torch.randperm(cfg['num_clients'])[:num_supervised_clients]].tolist()
+    unsup_client_id = list(set(range(cfg['num_clients']))-set(client_id))
+    # print(len(unsup_client_id))
+    # print(client_id)
+    for i in range(num_supervised_clients):
+        # print(client_id[i])
+        client[client_id[i]].supervised = True
+        client[client_id[i]].data_split = {'train': data_split_sup['train'][i], 'test': data_split_sup['test'][i]}
+    
+    for i in range(len(unsup_client_id)):
+        if client[unsup_client_id[i]].supervised == False:
+            client[unsup_client_id[i]].data_split = {'train': data_split_unsup['train'][i], 'test': data_split_unsup['test'][i]}
+    
+    # for i in range(100):
+    #     print(i,client[i].supervised)
+
     return client , client_id
 
 
-def train_client(batchnorm_dataset, client_dataset, server, client, supervised_clients, optimizer, metric, logger, epoch,mode):
+def train_client(client_dataset_sup, client_dataset_unsup, server, client, supervised_clients, optimizer, metric, logger, epoch,mode):
     logger.safe(True)
     if 'ft' in cfg['loss_mode']:
         if epoch <= cfg['switch_epoch']:
             num_active_clients = int(np.ceil(cfg['active_rate'] * cfg['num_clients']))
-            client_id = torch.arange(cfg['num_clients'])[torch.randperm(cfg['num_clients'])[:num_active_clients]].tolist()
+            ACL=set(torch.arange(cfg['num_clients']).tolist())
+            ACL = ACL-set(supervised_clients)
+            # print(ACL)
+            # ran_CL = set(torch.randperm(cfg['num_clients']).tolist())
+            # ran_CL = [ran_CL-set(supervised_clients)]
+            client_id = random.sample(ACL,num_active_clients)
+            # client_id = torch.arange(cfg['num_clients'])[torch.randperm(cfg['num_clients'])[:num_active_clients]].tolist()
             for i in range(num_active_clients):
                 client[client_id[i]].active = True
+            server.distribute(client,client_dataset_unsup)
         else:
             num_active_clients = len(supervised_clients)
             client_id = supervised_clients
             for i in range(num_active_clients):
                 client[client_id[i]].active = True
+            server.distribute(client,client_dataset_unsup)
             # if epoch == cfg['change_epoch']
     elif 'at' in cfg['loss_mode']:
         cfg['srange'] = [21,31,51,61,81,91,111,121]
@@ -209,11 +249,20 @@ def train_client(batchnorm_dataset, client_dataset, server, client, supervised_c
             client_id = supervised_clients
             for i in range(num_active_clients):
                 client[client_id[i]].active = True
+            server.distribute(client,client_dataset_sup)
         else:
             num_active_clients = int(np.ceil(cfg['active_rate'] * cfg['num_clients']))
-            client_id = torch.arange(cfg['num_clients'])[torch.randperm(cfg['num_clients'])[:num_active_clients]].tolist()
+            ACL=set(torch.arange(cfg['num_clients']).tolist())
+            ACL = ACL-set(supervised_clients)
+            # print(ACL)
+            # ran_CL = set(torch.randperm(cfg['num_clients']).tolist())
+            # ran_CL = [ran_CL-set(supervised_clients)]
+            client_id = random.sample(ACL,num_active_clients)
+            # client_id = torch.arange(cfg['num_clients'])[torch.randperm(cfg['num_clients'])[:num_active_clients]].tolist()
             for i in range(num_active_clients):
                 client[client_id[i]].active = True
+            server.distribute(client,client_dataset_unsup)
+
     elif 'fix' in cfg['loss_mode'] and 'alt' not in cfg['loss_mode']:
         if epoch >cfg['switch_epoch_pred']:
             cfg['loss_mode'] = 'fix-mix'
@@ -228,11 +277,13 @@ def train_client(batchnorm_dataset, client_dataset, server, client, supervised_c
             # client_id = torch.arange(cfg['num_clients'])[torch.randperm(cfg['num_clients'])[:num_active_clients]].tolist()
             for i in range(num_active_clients):
                 client[client_id[i]].active = True
+            server.distribute(client,client_dataset_unsup)
         else:
             num_active_clients = len(supervised_clients)
             client_id = supervised_clients
             for i in range(num_active_clients):
                 client[client_id[i]].active = True
+            server.distribute(client,client_dataset_sup)
     elif 'alt-fix' in cfg['loss_mode']:
         print('entered alt-fix mode')
         if epoch %2 != 0:# or epoch >270:
@@ -250,6 +301,7 @@ def train_client(batchnorm_dataset, client_dataset, server, client, supervised_c
             # client_id = torch.arange(cfg['num_clients'])[torch.randperm(cfg['num_clients'])[:num_active_clients]].tolist()
             for i in range(num_active_clients):
                 client[client_id[i]].active = True
+            server.distribute(client,client_dataset_unsup)
         elif epoch % 2 == 0:# and epoch <=270:
             cfg['loss_mode'] = 'sup'
             print(cfg['loss_mode'])
@@ -257,6 +309,7 @@ def train_client(batchnorm_dataset, client_dataset, server, client, supervised_c
             client_id = supervised_clients
             for i in range(num_active_clients):
                 client[client_id[i]].active = True
+            server.distribute(client,client_dataset_sup)
     # elif 'alt-fix' in cfg['loss_mode']:
     #     print('entered alt-fix mode')
     #     if epoch %2 == 0:
@@ -283,7 +336,7 @@ def train_client(batchnorm_dataset, client_dataset, server, client, supervised_c
 
     # server.distribute(client, batchnorm_dataset)
     print(f'traning the following clients {client_id}')
-    server.distribute(client,batchnorm_dataset)
+    # server.distribute(client,batchnorm_dataset)
     if cfg['kl_loss'] ==1 and epoch==cfg['switch_epoch']:
         server.distribute_fix_model(client,batchnorm_dataset)
     num_active_clients = len(client_id)
@@ -292,7 +345,12 @@ def train_client(batchnorm_dataset, client_dataset, server, client, supervised_c
     for i in range(num_active_clients):
         m = client_id[i]
         # print(type(client[m].data_split['train']))
-        dataset_m = separate_dataset(client_dataset, client[m].data_split['train'])
+        # print(client[m].supervised)
+        if client[m].supervised ==  True:
+            dataset_m = separate_dataset_DA(client_dataset_sup, client[m].data_split['train'],cfg['data_name'])
+        elif client[m].supervised ==  False:
+            print('entered false')
+            dataset_m = separate_dataset_DA(client_dataset_unsup, client[m].data_split['train'],cfg['data_name_unsup'])
         if 'batch' not in cfg['loss_mode'] and 'frgd' not in cfg['loss_mode'] and 'fmatch' not in cfg['loss_mode']:
             # cfg['pred'] = True
             dataset_m = client[m].make_dataset(dataset_m, metric, logger)
@@ -349,13 +407,14 @@ def train_server(dataset, server, optimizer, metric, logger, epoch):
     return
 
 
-def test(data_loader, model, metric, logger, epoch):
+def test(data_loader, model, metric, logger, epoch,sup=False):
     logger.safe(True)
     with torch.no_grad():
         model.train(False)
         for i, input in enumerate(data_loader):
             input = collate(input)
             input_size = input['data'].size(0)
+            # print(input_size)
             input = to_device(input, cfg['device'])
             input['loss_mode'] = cfg['loss_mode']
             input['supervised_mode'] = False
@@ -363,10 +422,17 @@ def test(data_loader, model, metric, logger, epoch):
             output = model(input)
             output['loss'] = output['loss'].mean() if cfg['world_size'] > 1 else output['loss']
             evaluation = metric.evaluate(metric.metric_name['test'], input, output)
-            logger.append(evaluation, 'test', input_size)
-        info = {'info': ['Model: {}'.format(cfg['model_tag']), 'Test Epoch: {}({:.0f}%)'.format(epoch, 100.)]}
-        logger.append(info, 'test', mean=False)
-        print(logger.write('test', metric.metric_name['test']))
+            if sup:
+                logger.append(evaluation, 'test_sup', input_size)
+            else :
+                logger.append(evaluation, 'test_unsup', input_size)
+        info = {'info': ['Model: {}{}'.format(cfg['model_tag'],'sup' if sup else 'unsup'), 'Test Epoch: {}({:.0f}%)'.format(epoch, 100.)]}
+        if sup:
+            logger.append(info, 'test_sup', mean=False)
+            print(logger.write('test_sup', metric.metric_name['test']))
+        else:
+            logger.append(info, 'test_unsup', mean=False)
+            print(logger.write('test_unsup', metric.metric_name['test']))
     logger.safe(False)
     return
 
