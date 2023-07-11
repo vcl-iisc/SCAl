@@ -1045,9 +1045,10 @@ class Client:
             #     model.module.projection.requires_grad_(False)
                 
             if cfg['client']['num_epochs'] == 1:
-                num_batches = int(np.ceil(len(data_loader) * float(cfg['local_epoch'][0])))
+                num_batches = int(np.ceil(len(train_data_loader) * float(cfg['local_epoch'][0])))
             else:
                 num_batches = None
+            # num_batches =None
             for epoch in range(1, cfg['client']['num_epochs'] + 1):
                 # data_loader = make_data_loader({'train': dataset}, 'client')['train']
                 # with torch.no_grad():
@@ -1163,6 +1164,7 @@ class Client:
                              'mix_data': mix_input['augs'], 'mix_target': mix_input['target'],'id':fix_input['id']}
                     input = collate(input)
                     input_size = input['data'].size(0)
+                    # print(input['mix_data'].shape)
                     input['lam'] = self.beta.sample()[0]
                     input['mix_data'] = (input['lam'] * input['data'] + (1 - input['lam']) * input['mix_data']).detach()
                     input['mix_target'] = torch.stack([input['target'], input['mix_target']], dim=-1)
@@ -1171,14 +1173,15 @@ class Client:
                     optimizer.zero_grad()
                     # output = model(input)
                     aug_output,mix_output,augw_output = model(input)
+                    # print(aug_output,mix_output,augw_output)
                     output['target'] = augw_output
                     # print(aug_output.get_device(),mix_output.get_device(),input['id'],input['target'].detach().get_device())
-                    output['loss']  = self.EL_loss(input['id'].detach(),aug_output, input['target'].detach())
-                    output['loss'] += input['lam'] * self.EL_loss(input['id'].detach(),mix_output, input['mix_target'][:, 0].detach()) + (
-                            1 - input['lam']) * self.EL_loss(input['id'].detach(),mix_output, input['mix_target'][:, 1].detach())
-                    # output['loss'] = loss_fn(aug_output, input['target'].detach())
-                    # output['loss'] += input['lam'] * loss_fn(mix_output, input['mix_target'][:, 0].detach()) + (
-                    #     1 - input['lam']) * loss_fn(mix_output, input['mix_target'][:, 1].detach())
+                    # output['loss']  = self.EL_loss(input['id'].detach(),aug_output, input['target'].detach())
+                    # output['loss'] += input['lam'] * self.EL_loss(input['id'].detach(),mix_output, input['mix_target'][:, 0].detach()) + (
+                    #         1 - input['lam']) * self.EL_loss(input['id'].detach(),mix_output, input['mix_target'][:, 1].detach())
+                    output['loss'] = loss_fn(aug_output, input['target'].detach())
+                    output['loss'] += input['lam'] * loss_fn(mix_output, input['mix_target'][:, 0].detach()) + (
+                        1 - input['lam']) * loss_fn(mix_output, input['mix_target'][:, 1].detach())
                     output['loss'].backward()
                     torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
                     optimizer.step()
@@ -1229,7 +1232,33 @@ def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch):
         model.eval()
         # print("update psd label bank!")
         glob_multi_feat_cent, all_psd_label = init_multi_cent_psd_label(model,test_data_loader)
-        
+        # print(all_psd_label.shape)
+        # if epoch%2==0:
+        #     print(glob_multi_feat_cent.shape)
+        #     num_cent = glob_multi_feat_cent.shape[1]
+        #     temp = []
+        #     from sklearn.manifold import TSNE
+        #     import matplotlib.pyplot as plt
+        #     from matplotlib import cm
+        #     tsne = TSNE(2,perplexity = num_cent, verbose=1)
+        #     # for i in range(glob_multi_feat_cent.shape[0]):
+        #     #     tsne_proj = tsne.fit_transform(glob_multi_feat_cent[i].cpu()) 
+        #     #     temp.append(tsne_proj)
+        #     k_ = glob_multi_feat_cent.cpu().reshape(-1,512)
+        #     print(k_.shape)
+        #     tsne_proj = tsne.fit_transform(k_) 
+        #     print(f'shape value{tsne_proj.shape}')
+        #     cmap = cm.get_cmap('tab20')
+        #     fig, ax = plt.subplots(figsize=(8,8))
+        #     l=0
+        #     for i in range(tsne_proj.shape[0]//num_cent):
+        #         indices = slice(l,l+num_cent)
+        #         l+=num_cent
+        #         print(indices)
+        #         ax.scatter(tsne_proj[indices,0],tsne_proj[indices,1], c=np.array(cmap(i)).reshape(1,4), label = i ,alpha=0.5)
+        #     ax.legend(fontsize='large', markerscale=2)
+        #     plt.show()
+        #     exit()
         model.train()
     epoch_idx=epoch
     for i, input in enumerate(train_data_loader):
@@ -1255,12 +1284,12 @@ def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch):
         reg_loss = - torch.sum(torch.log(mean_pred_cls) * mean_pred_cls)
         ent_loss = - torch.sum(torch.log(pred_cls) * pred_cls, dim=1).mean()
         psd_loss = - torch.sum(torch.log(pred_cls) * psd_label, dim=1).mean()
-        
+        # print(epoch_idx)
         if epoch_idx >= 1.0:
             loss = ent_loss + 2.0 * psd_loss
         else:
             loss = - reg_loss + ent_loss
-        
+        # print(loss)
         #==================================================================#
         # SOFT FEAT SIMI LOSS
         #==================================================================#
@@ -1268,7 +1297,6 @@ def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch):
         dym_feat_simi = torch.einsum("cmd, nd -> ncm", glob_multi_feat_cent, normed_emd_feat)
         dym_feat_simi, _ = torch.max(dym_feat_simi, dim=2) #[N, C]
         dym_label = torch.softmax(dym_feat_simi, dim=1)    #[N, C]
-        
         dym_psd_loss = - torch.sum(torch.log(pred_cls) * dym_label, dim=1).mean() - torch.sum(torch.log(dym_label) * pred_cls, dim=1).mean()
         
         if epoch_idx >= 1.0:

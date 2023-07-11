@@ -309,6 +309,7 @@ class ResNet(nn.Module):
                 # print(input['augw'])
                 # print(input.keys())
                 f,x =self.f(input['augw'])
+                # return f,x
                 return f,torch.softmax(x,dim=1)
                 
             elif input['loss_mode'] == 'fix-mix' and 'kl_loss' not in input:

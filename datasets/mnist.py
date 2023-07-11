@@ -33,8 +33,10 @@ class MNIST(Dataset):
         self.other = {'id': id}
 
     def __getitem__(self, index):
+        # print(self.other)
         data, target = Image.fromarray(self.data[index], mode='L'), torch.tensor(self.target[index])
         other = {k: torch.tensor(self.other[k][index]) for k in self.other}
+        # print(other)
         input = {**other, 'data': data, 'target': target}
         if self.transform is not None:
             input = self.transform(input)
@@ -75,6 +77,7 @@ class MNIST(Dataset):
 
     def make_data(self):
         train_data = read_image_file(os.path.join(self.raw_folder, 'train-images-idx3-ubyte'))
+        print(train_data.shape)
         test_data = read_image_file(os.path.join(self.raw_folder, 't10k-images-idx3-ubyte'))
         train_target = read_label_file(os.path.join(self.raw_folder, 'train-labels-idx1-ubyte'))
         test_target = read_label_file(os.path.join(self.raw_folder, 't10k-labels-idx1-ubyte'))

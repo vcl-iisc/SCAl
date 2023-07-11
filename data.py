@@ -8,34 +8,76 @@ from torchvision import transforms
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.dataloader import default_collate
 from utils import collate, to_device
-
+# from pytorch_adapt.datasets import DataloaderCreator, get_office31
+from PIL import Image
+import random
+    
 data_stats = {'MNIST': ((0.1307,), (0.3081,)), 'FashionMNIST': ((0.2860,), (0.3530,)),
               'CIFAR10': ((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
               'CIFAR100': ((0.5071, 0.4865, 0.4409), (0.2673, 0.2564, 0.2762)),
               'SVHN': ((0.4377, 0.4438, 0.4728), (0.1980, 0.2010, 0.1970)),
               'STL10': ((0.4409, 0.4279, 0.3868), (0.2683, 0.2610, 0.2687)),
-              'USPS':((0.5),
-                             (0.5))}
+              'USPS':((0.5,),
+                             (0.5,)),
+               'office31':([0.485, 0.456, 0.406],
+                                   [0.229, 0.224, 0.225])}
+            #    'dslr':([0.485, 0.456, 0.406],
+            #                        [0.229, 0.224, 0.225]),
+            #    'webcam':([0.485, 0.456, 0.406],
+            #                        [0.229, 0.224, 0.225])}
 
 
-def fetch_dataset(data_name):
+def fetch_dataset(data_name,domain = None):
     import datasets
     dataset = {}
     print('fetching data {}...'.format(data_name))
     root = './data/{}'.format(data_name)
     if data_name in ['MNIST', 'FashionMNIST']:
         dataset['train'] = eval('datasets.{}(root=root, split=\'train\', '
-                                'transform=datasets.Compose([transforms.ToTensor()]))'.format(data_name))
+                                'transform=datasets.Compose([transforms.Grayscale(num_output_channels=3),transforms.ToTensor()]))'.format(data_name))
         dataset['test'] = eval('datasets.{}(root=root, split=\'test\', '
-                               'transform=datasets.Compose([transforms.ToTensor()]))'.format(data_name))
+                               'transform=datasets.Compose([transforms.Grayscale(num_output_channels=3),transforms.ToTensor()]))'.format(data_name))
         # dataset['train'].transform = datasets.Compose([
         #     transforms.ToTensor(),
         #     transforms.Normalize(*data_stats[data_name])])
         dataset['train'].transform = datasets.Compose([
+            transforms.Grayscale(num_output_channels=3),
             transforms.ToTensor()])
         dataset['test'].transform = datasets.Compose([
+            transforms.Grayscale(num_output_channels=3),
             transforms.ToTensor(),
             transforms.Normalize(*data_stats[data_name])])
+    elif data_name in ['office31']:
+        # dataset['train'] = eval('datasets.{}(root=root, split=\'train\', '
+        #                         'transform=datasets.Compose([transforms.ToTensor()]))'.format(data_name))
+        # dataset['test'] = eval('datasets.{}(root=root, split=\'test\', '
+        #                        'transform=datasets.Compose([transforms.ToTensor()]))'.format(data_name))
+        dataset['train'] = datasets.office31(root=root,domain = domain, split='train',
+                                transform=datasets.Compose([transforms.ToTensor()]))
+        
+        dataset['train'].transform = datasets.Compose([
+            # transforms.Grayscale(num_output_channels=3),
+            transforms.ToTensor()])
+        if cfg['test_10_crop']:
+            crop_list = image_test_10crop()
+            for i in range(10):
+                dataset['test'] = [datasets.office31(root=root, split='test',domain = domain,
+                                transform=crop_list[i]) for i in range(10)]
+
+        else:
+            dataset['test'] = datasets.office31(root=root, split='test',domain = domain,
+                                transform=datasets.Compose([transforms.ToTensor()]))
+            dataset['test'].transform = datasets.Compose([
+            # transforms.Grayscale(num_output_channels=3),
+            transforms.ToTensor(),
+            transforms.Normalize(*data_stats[data_name])
+            ])
+        # dataset['train'].transform = datasets.Compose([
+        #     transforms.ToTensor(),
+        #     transforms.Normalize(*data_stats[data_name])])
+        
+        # if not cfg['test_10_crop']:
+            
     elif data_name in ['CIFAR10', 'CIFAR100']:
         dataset['train'] = eval('datasets.{}(root=root, split=\'train\', '
                                 'transform=datasets.Compose([transforms.ToTensor()]))'.format(data_name))
@@ -54,14 +96,17 @@ def fetch_dataset(data_name):
                                 'transform=datasets.Compose([transforms.ToTensor()]))'.format(data_name))
         dataset['test'] = eval('datasets.{}(root=root, split=\'test\', '
                                'transform=datasets.Compose([transforms.ToTensor()]))'.format(data_name))
-        dataset['train'].transform = datasets.Compose([transforms.Grayscale(),
+        dataset['train'].transform = datasets.Compose([
+            # transforms.Grayscale(),
             transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
             transforms.ToTensor(),
-            transforms.Normalize((0.5),(0.5))])
-            # transforms.Normalize(*data_stats[data_name])])
-        dataset['test'].transform = datasets.Compose([transforms.Grayscale(),
+            # transforms.Normalize((0.5),(0.5))])
+            transforms.Normalize(*data_stats[data_name])])
+        dataset['test'].transform = datasets.Compose([
+            # transforms.Grayscale(),
             transforms.ToTensor(),
-            transforms.Normalize((0.5), (0.5))])
+            transforms.Normalize(*data_stats[data_name])])
+            # transforms.Normalize((0.5), (0.5))])
     elif data_name in ['STL10']:
         dataset['train'] = eval('datasets.{}(root=root, split=\'train\', '
                                 'transform=datasets.Compose([transforms.ToTensor()]))'.format(data_name))
@@ -77,15 +122,19 @@ def fetch_dataset(data_name):
             transforms.Normalize(*data_stats[data_name])])
     elif data_name in ['USPS']:
         dataset['train'] = eval('datasets.{}(root=root, split=\'train\', '
-                                'transform=datasets.Compose([transforms.ToTensor()]))'.format(data_name))
+                                'transform=datasets.Compose([transforms.Grayscale(num_output_channels=3),transforms.ToTensor()]))'.format(data_name))
         dataset['test'] = eval('datasets.{}(root=root, split=\'test\', '
-                               'transform=datasets.Compose([transforms.ToTensor()]))'.format(data_name))
+                               'transform=datasets.Compose([transforms.Grayscale(num_output_channels=3),transforms.ToTensor()]))'.format(data_name))
         # dataset['train'].transform = datasets.Compose([
         #     transforms.ToTensor(),
         #     transforms.Normalize(*data_stats[data_name])])
-        dataset['train'].transform = datasets.Compose([transforms.Resize(32),
+        dataset['train'].transform = datasets.Compose([
+            transforms.Grayscale(num_output_channels=3),
+            transforms.Resize(32),
             transforms.ToTensor()])
-        dataset['test'].transform = datasets.Compose([transforms.Resize(32),
+        dataset['test'].transform = datasets.Compose([
+            transforms.Grayscale(num_output_channels=3),
+            transforms.Resize(32),
             transforms.ToTensor(),
             transforms.Normalize(*data_stats[data_name])])
     else:
@@ -125,6 +174,47 @@ def make_data_loader(dataset, tag, batch_size=None, shuffle=None, sampler=None, 
 
     return data_loader
 
+def make_data_loader_DA(dataset, tag, batch_size=None, shuffle=None, sampler=None, batch_sampler=None):
+    data_loader = {}
+    print(cfg['test_10_crop'])
+    for k in dataset:
+        if cfg['test_10_crop']  and k == 'test':
+            print('creating test 10 crop')
+            _batch_size = cfg[tag]['batch_size'][k] if batch_size is None else batch_size[k]
+            _shuffle = cfg[tag]['shuffle'][k] if shuffle is None else shuffle[k]
+            print(_batch_size,_shuffle)
+            if sampler is not None:
+                for i in range(10):
+                    data_loader[k] = [DataLoader(dataset=dataset, batch_size=_batch_size, sampler=sampler[k],
+                                            pin_memory=True, num_workers=cfg['num_workers'], collate_fn=input_collate,
+                                            worker_init_fn=np.random.seed(cfg['seed'])) for dataset in dataset[k]]
+            elif batch_sampler is not None:
+                for i in range(10):
+                    data_loader[k] = [DataLoader(dataset=dataset, batch_sampler=batch_sampler[k],
+                                            pin_memory=True, num_workers=cfg['num_workers'], collate_fn=input_collate,
+                                            worker_init_fn=np.random.seed(cfg['seed'])  ) for dataset in dataset[k]]
+            else:
+                for i in range(10):
+                    data_loader[k] = [DataLoader(dataset=dataset, batch_size=_batch_size, shuffle=_shuffle,
+                                            pin_memory=True, num_workers=cfg['num_workers'], collate_fn=input_collate,
+                                            worker_init_fn=np.random.seed(cfg['seed'])) for dataset in dataset[k]]
+        else :
+            _batch_size = cfg[tag]['batch_size'][k] if batch_size is None else batch_size[k]
+            _shuffle = cfg[tag]['shuffle'][k] if shuffle is None else shuffle[k]
+            if sampler is not None:
+                data_loader[k] = DataLoader(dataset=dataset[k], batch_size=_batch_size, sampler=sampler[k],
+                                            pin_memory=True, num_workers=cfg['num_workers'], collate_fn=input_collate,
+                                            worker_init_fn=np.random.seed(cfg['seed']))
+            elif batch_sampler is not None:
+                data_loader[k] = DataLoader(dataset=dataset[k], batch_sampler=batch_sampler[k],
+                                            pin_memory=True, num_workers=cfg['num_workers'], collate_fn=input_collate,
+                                            worker_init_fn=np.random.seed(cfg['seed']))
+            else:
+                data_loader[k] = DataLoader(dataset=dataset[k], batch_size=_batch_size, shuffle=_shuffle,
+                                            pin_memory=True, num_workers=cfg['num_workers'], collate_fn=input_collate,
+                                            worker_init_fn=np.random.seed(cfg['seed']))
+
+    return data_loader
 
 def split_dataset(dataset, num_users, data_split_mode):
     data_split = {}
@@ -356,13 +446,14 @@ class FixTransform(object):
             ])
         elif data_name in ['SVHN']:
             self.normal = transforms.Compose(
-                                [transforms.Grayscale(),
+                                [
+                                # transforms.Grayscale(),
                                 transforms.ToTensor(),
                                 transforms.Normalize((0.5),(0.5))
                                 # transforms.Normalize(*data_stats[data_name])
                                 ])
             self.weak = transforms.Compose([
-                transforms.Grayscale(),
+                # transforms.Grayscale(),
                 transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
                 transforms.ToTensor(),
                 transforms.Normalize((0.5),(0.5))
@@ -371,7 +462,7 @@ class FixTransform(object):
             self.strong = transforms.Compose([
                 transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
                 datasets.RandAugment(n=2, m=10),
-                transforms.Grayscale(),
+                # transforms.Grayscale(),
                 transforms.ToTensor(),
                 transforms.Normalize((0.5),(0.5))
                 # transforms.Normalize(*data_stats[data_name])
@@ -379,16 +470,19 @@ class FixTransform(object):
         elif data_name in ['USPS']:
             self.normal = transforms.Compose(
                                 [transforms.Resize(32),
+                                 transforms.Grayscale(num_output_channels=3),
                                  transforms.ToTensor(),
                                 transforms.Normalize(*data_stats[data_name])
                                 ])
             self.weak = transforms.Compose([transforms.Resize(32),
+                transforms.Grayscale(num_output_channels=3),
                 transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
                 transforms.ToTensor(),
                 transforms.Normalize(*data_stats[data_name])
                 
             ])
             self.strong = transforms.Compose([transforms.Resize(32),
+                transforms.Grayscale(num_output_channels=3),
                 transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
                 # datasets.RandAugment(n=2, m=10),
                 transforms.ToTensor(),
@@ -396,16 +490,20 @@ class FixTransform(object):
             ])
         elif data_name in ['MNIST']:
             self.normal = transforms.Compose(
-                                [transforms.ToTensor(),
+                                [
+                                transforms.Grayscale(num_output_channels=3),
+                                transforms.ToTensor(),
                                 transforms.Normalize(*data_stats[data_name])
                                 ])
             self.weak = transforms.Compose([
+                transforms.Grayscale(num_output_channels=3),
                 transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
                 transforms.ToTensor(),
                 transforms.Normalize(*data_stats[data_name])
                 
             ])
             self.strong = transforms.Compose([
+                transforms.Grayscale(num_output_channels=3),
                 transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
                 # datasets.RandAugment(n=2, m=10),
                 transforms.ToTensor(),
@@ -429,6 +527,45 @@ class FixTransform(object):
                 transforms.ToTensor(),
                 transforms.Normalize(*data_stats[data_name])
             ])
+        elif data_name in ['office31']:
+            resize_size = 256
+            crop_size = 224
+            self.normal = transforms.Compose(
+                                [
+                                # transforms.CenterCrop(224),
+                                # transforms.ToTensor(),
+                                # transforms.Normalize(*data_stats[data_name])
+                                # # transforms.RandomResizedCrop(224)
+                                ResizeImage(resize_size),
+        transforms.RandomResizedCrop(crop_size),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize(*data_stats[data_name])
+                                ])
+            self.weak = transforms.Compose([
+                
+                # transforms.RandomHorizontalFlip(),
+                # transforms.CenterCrop(224),
+                # transforms.ToTensor(),
+                # transforms.Normalize(*data_stats[data_name]),
+                # # ResizeImage(256),
+                # # transforms.RandomResizedCrop(224),
+                ResizeImage(resize_size),
+        transforms.RandomResizedCrop(crop_size),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize(*data_stats[data_name])
+                
+            ])
+            self.strong = transforms.Compose([
+                ResizeImage(resize_size),
+                # transforms.CenterCrop(224),
+                transforms.RandomResizedCrop(crop_size),
+                transforms.RandomHorizontalFlip(),
+                datasets.RandAugment(n=2, m=10),
+                transforms.ToTensor(),
+                transforms.Normalize(*data_stats[data_name])
+            ])
         else:
             raise ValueError('Not valid dataset')
 
@@ -440,6 +577,39 @@ class FixTransform(object):
         # input = {**input, 'data': data, 'augw': augw}
         return input
 
+class ResizeImage():
+    def __init__(self, size):
+      if isinstance(size, int):
+        self.size = (int(size), int(size))
+      else:
+        self.size = size
+    def __call__(self, img):
+    #   print(type(img))
+    #   if type(img) == dict:
+    #       print(img.keys())
+      th, tw = self.size
+      return img.resize((th, tw))
+
+class RandomSizedCrop(object):
+    """Crop the given PIL.Image to random size and aspect ratio.
+    A crop of random size of (0.08 to 1.0) of the original size and a random
+    aspect ratio of 3/4 to 4/3 of the original aspect ratio is made. This crop
+    is finally resized to given size.
+    This is popularly used to train the Inception networks.
+    Args:
+        size: size of the smaller edge
+        interpolation: Default: PIL.Image.BILINEAR
+    """
+
+    def __init__(self, size, interpolation=Image.BILINEAR):
+        self.size = size
+        self.interpolation = interpolation
+
+    def __call__(self, img):
+        h_off = random.randint(0, img.shape[1]-self.size)
+        w_off = random.randint(0, img.shape[2]-self.size)
+        img = img[:, h_off:h_off+self.size, w_off:w_off+self.size]
+        return img
 class SimDataset(object):
     def __init__(self, data_name,transform_type='sim' ,s=1,size=32):
         import datasets
@@ -491,6 +661,7 @@ class MixDataset(Dataset):
     def __getitem__(self, index):
         index = torch.randint(0, len(self.dataset), (1,)).item()
         input = self.dataset[index]
+        # print(input['augs'].shape)
         # input = {'data': input['data'], 'target': input['target']}
         input = {'data': input['data'], 'augw': input['augw'], 'augs':input['augs'],'target': input['target']}
         # input = {'data': input['data'], 'augw': input['augw'],'target': input['target']}
@@ -498,3 +669,142 @@ class MixDataset(Dataset):
 
     def __len__(self):
         return self.size
+
+
+def image_test_10crop(resize_size=256, crop_size=224, alexnet=False):
+    
+    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                   std=[0.229, 0.224, 0.225])
+    
+    start_first = 0
+    start_center = (resize_size - crop_size - 1) / 2
+    start_last = resize_size - crop_size - 1
+    data_transforms = [
+        transforms.Compose([
+        ResizeImage(resize_size),ForceFlip(),
+        PlaceCrop(crop_size, start_first, start_first),
+        transforms.ToTensor(),
+        normalize
+        ]),
+        transforms.Compose([
+        ResizeImage(resize_size),ForceFlip(),
+        PlaceCrop(crop_size, start_last, start_last),
+        transforms.ToTensor(),
+        normalize
+        ]),
+        transforms.Compose([
+        ResizeImage(resize_size),ForceFlip(),
+        PlaceCrop(crop_size, start_last, start_first),
+        transforms.ToTensor(),
+        normalize
+        ]),
+        transforms.Compose([
+        ResizeImage(resize_size),ForceFlip(),
+        PlaceCrop(crop_size, start_first, start_last),
+        transforms.ToTensor(),
+        normalize
+        ]),
+        transforms.Compose([
+        ResizeImage(resize_size),ForceFlip(),
+        PlaceCrop(crop_size, start_center, start_center),
+        transforms.ToTensor(),
+        normalize
+        ]),
+        transforms.Compose([
+        ResizeImage(resize_size),
+        PlaceCrop(crop_size, start_first, start_first),
+        transforms.ToTensor(),
+        normalize
+        ]),
+        transforms.Compose([
+        ResizeImage(resize_size),
+        PlaceCrop(crop_size, start_last, start_last),
+        transforms.ToTensor(),
+        normalize
+        ]),
+        transforms.Compose([
+        ResizeImage(resize_size),
+        PlaceCrop(crop_size, start_last, start_first),
+        transforms.ToTensor(),
+        normalize
+        ]),
+        transforms.Compose([
+        ResizeImage(resize_size),
+        PlaceCrop(crop_size, start_first, start_last),
+        transforms.ToTensor(),
+        normalize
+        ]),
+        transforms.Compose([
+        ResizeImage(resize_size),
+        PlaceCrop(crop_size, start_center, start_center),
+        transforms.ToTensor(),
+        normalize
+        ])
+    ]
+    return data_transforms
+class PlaceCrop(object):
+    """Crops the given PIL.Image at the particular index.
+    Args:
+        size (sequence or int): Desired output size of the crop. If size is an
+            int instead of sequence like (w, h), a square crop (size, size) is
+            made.
+    """
+
+    def __init__(self, size, start_x, start_y):
+        if isinstance(size, int):
+            self.size = (int(size), int(size))
+        else:
+            self.size = size
+        self.start_x = start_x
+        self.start_y = start_y
+
+    def __call__(self, img):
+        """
+        Args:
+            img (PIL.Image): Image to be cropped.
+        Returns:
+            PIL.Image: Cropped image.
+        """
+        th, tw = self.size
+        return img.crop((self.start_x, self.start_y, self.start_x + tw, self.start_y + th))
+
+
+class ForceFlip(object):
+    """Horizontally flip the given PIL.Image randomly with a probability of 0.5."""
+
+    def __call__(self, img):
+        """
+        Args:
+            img (PIL.Image): Image to be flipped.
+        Returns:
+            PIL.Image: Randomly flipped image.
+        """
+        return img.transpose(Image.FLIP_LEFT_RIGHT)
+
+class CenterCrop(object):
+    """Crops the given PIL.Image at the center.
+    Args:
+        size (sequence or int): Desired output size of the crop. If size is an
+            int instead of sequence like (h, w), a square crop (size, size) is
+            made.
+    """
+
+    def __init__(self, size):
+        if isinstance(size, numbers.Number):
+            self.size = (int(size), int(size))
+        else:
+            self.size = size
+
+    def __call__(self, img):
+        """
+        Args:
+            img (PIL.Image): Image to be cropped.
+        Returns:
+            PIL.Image: Cropped image.
+        """
+        w, h = (img.shape[1], img.shape[2])
+        th, tw = self.size
+        w_off = int((w - tw) / 2.)
+        h_off = int((h - th) / 2.)
+        img = img[:, h_off:h_off+th, w_off:w_off+tw]
+        return img

@@ -43,8 +43,9 @@ def runExperiment():
     torch.cuda.manual_seed(cfg['seed'])
     print(cfg['gm'])
     #server_dataset = fetch_dataset(cfg['data_name'])
-    client_dataset_sup = fetch_dataset(cfg['data_name'],domain=cfg['domain_s'])
-    client_dataset_unsup = fetch_dataset(cfg['data_name_unsup'],domain=cfg['domain_u'])
+    client_dataset_sup = fetch_dataset(cfg['data_name'])
+    # print(cfg['data_name_unsup'])
+    client_dataset_unsup = fetch_dataset(cfg['data_name_unsup'])
     # print(len(server_dataset['train'].data))
     # print(len(client_dataset['train'].data))
     # for i in range(2):
@@ -55,8 +56,8 @@ def runExperiment():
     # print(len(server_dataset['train'].data))
     # print(len(client_dataset['train'].data))
     #data_loader = make_data_loader(server_dataset, 'global')
-    data_loader_sup = make_data_loader_DA(client_dataset_sup, 'global')
-    data_loader_unsup = make_data_loader_DA(client_dataset_unsup, 'global')
+    data_loader_sup = make_data_loader(client_dataset_sup, 'global')
+    data_loader_unsup = make_data_loader(client_dataset_unsup, 'global')
     # print(cfg)
     # model = eval('models.{}().to(cfg["device"])'.format(cfg['model_name']))
     if cfg['world_size']==1:
@@ -146,8 +147,8 @@ def runExperiment():
         scheduler.step()
         model.load_state_dict(server.model_state_dict)
         test_model = make_batchnorm_stats(client_dataset_unsup['train'], model, 'global')
-        test_DA(data_loader_sup['test'], test_model, metric, logger, epoch,sup=True)
-        test_DA(data_loader_unsup['test'], test_model, metric, logger, epoch)
+        test(data_loader_sup['test'], test_model, metric, logger, epoch,sup=True)
+        test(data_loader_unsup['test'], test_model, metric, logger, epoch)
         # result = {'cfg': cfg, 'epoch': epoch + 1, 'server': server, 'client': client,
         #           'optimizer_state_dict': optimizer.state_dict(),
         #           'scheduler_state_dict': scheduler.state_dict(),
@@ -511,51 +512,6 @@ def test(data_loader, model, metric, logger, epoch,sup=False):
     logger.safe(False)
     return
 
-def test_DA(data_loader, model, metric, logger, epoch):
-    with torch.no_grad():
-        model.train(False)
-        if cfg['test_10_crop']:
-            # iter_test = [iter(data_loader[i]) for i in range(10)]
-            for j in range(10):
-                # print(type(data_loader[j]))
-                for i, input in enumerate(data_loader[j]):
-                    # print(type(input))
-                    input = collate(input)
-                    input_size = input['data'].size(0)
-                    input = to_device(input, cfg['device'])
-                    input['loss_mode'] = cfg['loss_mode']
-                    input['supervised_mode'] = False
-                    input['test'] = True
-                    output = model(input)
-                    input['test'] = True
-                    output['loss'] = output['loss'].mean() if cfg['world_size'] > 1 else output['loss']
-                    evaluation = metric.evaluate(metric.metric_name['test'], input, output)
-                    logger.append(evaluation, 'test', input_size)
-            
-                
-            info = {'info': ['Model: {}'.format(cfg['model_tag']), 'Test Epoch: {}({:.0f}%)'.format(epoch, 100.)]}
-            logger.append(info, 'test', mean=False)
-            print(logger.write('test', metric.metric_name['test']))
-        else :
-            with torch.no_grad():
-                model.train(False)
-                for i, input in enumerate(data_loader):
-                    input = collate(input)
-                    input_size = input['data'].size(0)
-                    input = to_device(input, cfg['device'])
-                    input['loss_mode'] = cfg['loss_mode']
-                    input['supervised_mode'] = False
-                    input['test'] = True
-                    output = model(input)
-                    input['test'] = True
-                    output['loss'] = output['loss'].mean() if cfg['world_size'] > 1 else output['loss']
-                    evaluation = metric.evaluate(metric.metric_name['test'], input, output)
-                    logger.append(evaluation, 'test', input_size)
-                info = {'info': ['Model: {}'.format(cfg['model_tag']), 'Test Epoch: {}({:.0f}%)'.format(epoch, 100.)]}
-                logger.append(info, 'test', mean=False)
-                print(logger.write('test', metric.metric_name['test']))
-
-    return
 
 if __name__ == "__main__":
     main()

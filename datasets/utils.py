@@ -113,6 +113,7 @@ def download_url(url, root, filename, md5):
 def extract_file(src, dest=None, delete=False):
     print('Extracting {}'.format(src))
     dest = os.path.dirname(src) if dest is None else dest
+    print(dest)
     filename = os.path.basename(src)
     if filename.endswith('.zip'):
         with zipfile.ZipFile(src, "r") as zip_f:
@@ -129,7 +130,26 @@ def extract_file(src, dest=None, delete=False):
     if delete:
         os.remove(src)
     return
-
+def extract_file_content(src, dest=None, delete=False):
+    print('Extracting {}'.format(src))
+    dest = os.path.dirname(src) if dest is None else dest
+    print(dest)
+    filename = os.path.basename(src)
+    if filename.endswith('.zip'):
+        with zipfile.ZipFile(src, "r") as zip_f:
+            zip_f.extractall(dest)
+    elif filename.endswith('.tar'):
+        with tarfile.open(src) as tar_f:
+            tar_f.extractall(dest)
+    elif filename.endswith('.tar.gz') or filename.endswith('.tgz'):
+        with tarfile.open(src, 'r:gz') as tar_f:
+            tar_f.extractall(dest)
+    elif filename.endswith('.gz'):
+        with open(src.replace('.gz', ''), 'wb') as out_f, gzip.GzipFile(src) as zip_f:
+            out_f.write(zip_f.read())
+    if delete:
+        os.remove(src)
+    return
 
 def make_data(root, extensions):
     path = []

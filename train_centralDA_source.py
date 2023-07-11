@@ -35,7 +35,10 @@ def main():
     process_control()
     seeds = list(range(cfg['init_seed'], cfg['init_seed'] + cfg['num_experiments']))
     for i in range(cfg['num_experiments']):
-        model_tag_list = [str(seeds[i]), cfg['data_name'], cfg['model_name'], cfg['control_name']]
+        if cfg['data_name'] == 'office31':
+            model_tag_list = [str(seeds[i]), cfg['domain_s'], cfg['model_name'],cfg['control_name']]
+        else:
+            model_tag_list = [str(seeds[i]), cfg['data_name'], cfg['model_name'], cfg['control_name']]
         cfg['model_tag'] = '_'.join([x for x in model_tag_list if x])
         print('Experiment: {}'.format(cfg['model_tag']))
         runExperiment()
@@ -78,7 +81,7 @@ def runExperiment():
     # transform_unsup = FixTransform(cfg['data_name_unsup'])
     # client_dataset_unsup['train'].transform = transform_unsup
     # print(cfg)
-    cfg['global']['batch_size']={'train':50,'test':50}
+    cfg['global']['batch_size']={'train':10,'test':50}
     print(client_dataset_sup.keys())
     data_loader_sup = make_data_loader_DA(client_dataset_sup, 'global')
     # for input in data_loader_sup['train']:
@@ -92,6 +95,9 @@ def runExperiment():
     # print(model)
     # print(cfg['local'].keys())
     cfg['local']['lr'] = cfg['var_lr']
+    # print(cfg['global']['scheduler_name'])
+    cfg['global']['scheduler_name'] = cfg['scheduler_name']
+    # print(cfg['global']['scheduler_name'])
     optimizer = make_optimizer(model.parameters(), 'local')
     scheduler = make_scheduler(optimizer, 'global')
     metric = Metric({'train': ['Loss', 'Accuracy'], 'test': ['Loss', 'Accuracy']})
@@ -489,9 +495,9 @@ def test_DA(data_loader, model, metric, logger, epoch):
         if cfg['test_10_crop']:
             # iter_test = [iter(data_loader[i]) for i in range(10)]
             for j in range(10):
-                print(type(data_loader[j]))
+                # print(type(data_loader[j]))
                 for i, input in enumerate(data_loader[j]):
-                    print(type(input))
+                    # print(type(input))
                     input = collate(input)
                     input_size = input['data'].size(0)
                     input = to_device(input, cfg['device'])
