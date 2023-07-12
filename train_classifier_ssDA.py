@@ -511,7 +511,7 @@ def test(data_loader, model, metric, logger, epoch,sup=False):
     logger.safe(False)
     return
 
-def test_DA(data_loader, model, metric, logger, epoch):
+def test_DA(data_loader, model, metric, logger, epoch,sup=False):
     with torch.no_grad():
         model.train(False)
         if cfg['test_10_crop']:
@@ -534,8 +534,14 @@ def test_DA(data_loader, model, metric, logger, epoch):
             
                 
             info = {'info': ['Model: {}'.format(cfg['model_tag']), 'Test Epoch: {}({:.0f}%)'.format(epoch, 100.)]}
-            logger.append(info, 'test', mean=False)
-            print(logger.write('test', metric.metric_name['test']))
+            # logger.append(info, 'test', mean=False)
+            # print(logger.write('test', metric.metric_name['test']))
+            if sup:
+                logger.append(info, 'test_sup', mean=False)
+                print(logger.write('test_sup', metric.metric_name['test']))
+            else:
+                logger.append(info, 'test_unsup', mean=False)
+                print(logger.write('test_unsup', metric.metric_name['test']))
         else :
             with torch.no_grad():
                 model.train(False)
@@ -552,8 +558,14 @@ def test_DA(data_loader, model, metric, logger, epoch):
                     evaluation = metric.evaluate(metric.metric_name['test'], input, output)
                     logger.append(evaluation, 'test', input_size)
                 info = {'info': ['Model: {}'.format(cfg['model_tag']), 'Test Epoch: {}({:.0f}%)'.format(epoch, 100.)]}
-                logger.append(info, 'test', mean=False)
-                print(logger.write('test', metric.metric_name['test']))
+                # logger.append(info, 'test', mean=False)
+                # print(logger.write('test', metric.metric_name['test']))
+                if sup:
+                    logger.append(info, 'test_sup', mean=False)
+                    print(logger.write('test_sup', metric.metric_name['test']))
+                else:
+                    logger.append(info, 'test_unsup', mean=False)
+                    print(logger.write('test_unsup', metric.metric_name['test']))
 
     return
 
