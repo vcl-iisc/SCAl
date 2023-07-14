@@ -12,8 +12,8 @@ control:
   ft: '1'
   switch_epoch : 0
 # data
-data_name: CIFAR10
-data_name_unsup : SVHN
+data_name: MNIST
+data_name_unsup : MNIST
 model_name: resnet18
 # experiment
 num_supervised_clients: '10'
@@ -35,7 +35,10 @@ elr_lam : 1.0
 var_lr : 0.001
 scheduler_name : 'CosineAnnealingLR'
 DA : 1
-domain_s : 'dslr'
-domain_u : 'amazon'
+domain_s : 'MNIST'
+# domain_u : 'amazon'
+# unsup_list : ['amazon','webcam']
+unsup_list : ["MNIST_M","USPS"]
 test_10_crop : False
 bt : 10
+adapt_wt : 0

@@ -13,9 +13,12 @@ from PIL import Image
 import random
     
 data_stats = {'MNIST': ((0.1307,), (0.3081,)), 'FashionMNIST': ((0.2860,), (0.3530,)),
+              'MNIST_M': ((0.1307,), (0.3081,)),
               'CIFAR10': ((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
               'CIFAR100': ((0.5071, 0.4865, 0.4409), (0.2673, 0.2564, 0.2762)),
               'SVHN': ((0.4377, 0.4438, 0.4728), (0.1980, 0.2010, 0.1970)),
+            # 'SVHN':((0.5,),
+            #                  (0.5,)),
               'STL10': ((0.4409, 0.4279, 0.3868), (0.2683, 0.2610, 0.2687)),
               'USPS':((0.5,),
                              (0.5,)),
@@ -91,7 +94,7 @@ def fetch_dataset(data_name,domain = None):
         dataset['test'].transform = datasets.Compose([
             transforms.ToTensor(),
             transforms.Normalize(*data_stats[data_name])])
-    elif data_name in ['SVHN']:
+    elif data_name in ['SVHN','MNIST_M']:
         dataset['train'] = eval('datasets.{}(root=root, split=\'train\', '
                                 'transform=datasets.Compose([transforms.ToTensor()]))'.format(data_name))
         dataset['test'] = eval('datasets.{}(root=root, split=\'test\', '
@@ -103,7 +106,7 @@ def fetch_dataset(data_name,domain = None):
             # transforms.Normalize((0.5),(0.5))])
             transforms.Normalize(*data_stats[data_name])])
         dataset['test'].transform = datasets.Compose([
-            # transforms.Grayscale(),
+            # transforms.Grayscale(num_output_channels=1),
             transforms.ToTensor(),
             transforms.Normalize(*data_stats[data_name])])
             # transforms.Normalize((0.5), (0.5))])
@@ -364,13 +367,14 @@ def seperate_sup_unsup(client_dataset):
     return data_split
 def split_class_dataset_DA(dataset, data_split_mode = 'iid',split_num = 0):
     data_split = {}
+    # print(split_num)
     if data_split_mode == 'iid':
         data_split['train'] = seperate_sup_unsup_DA(dataset['train'],split_num)
         data_split['test'] = seperate_sup_unsup_DA(dataset['test'],split_num)
     return data_split
 def seperate_sup_unsup_DA(client_dataset,split_num):
     target = torch.tensor(client_dataset.target)
-    num_supervised_per_class = len(client_dataset)// (cfg['target_size']*split_num)
+    num_supervised_per_class = len(client_dataset)// (cfg['target_size']*split_num) #samples pre class per client
     data_split={}
     for i in range(int(split_num)):
         data_split[i] = []
@@ -379,7 +383,8 @@ def seperate_sup_unsup_DA(client_dataset,split_num):
         
         for i in range(int(split_num)):
             num_items_i = min(len(idx), num_supervised_per_class)
-            idx_i = idx[torch.randperm(len(idx))[:num_supervised_per_class]].tolist()
+            idx_i = idx[torch.randperm(len(idx))[:num_items_i]].tolist()
+            # idx_i = idx[torch.randperm(len(idx))[:num_supervised_per_class]].tolist()
             data_split[i].extend(idx_i)
             idx = list(set(idx.tolist()) - set(idx_i))
             idx = torch.Tensor(idx)
@@ -422,7 +427,11 @@ def make_batchnorm_stats(dataset, model, tag):
         dataset.transform = _transform
     return test_model
 
-
+def make_batchnorm_stats_DA(model, tag):
+    with torch.no_grad():
+        test_model = copy.deepcopy(model)
+        test_model.apply(lambda m: models.make_batchnorm(m, momentum=0.1, track_running_stats=True))
+    return test_model
 class FixTransform(object):
     def __init__(self, data_name):
         import datasets
@@ -444,7 +453,7 @@ class FixTransform(object):
                 transforms.ToTensor(),
                 transforms.Normalize(*data_stats[data_name])
             ])
-        elif data_name in ['SVHN']:
+        elif data_name in ['SVHN','MNIST_M']:
             self.normal = transforms.Compose(
                                 [
                                 # transforms.Grayscale(),
@@ -469,19 +478,24 @@ class FixTransform(object):
             ])
         elif data_name in ['USPS']:
             self.normal = transforms.Compose(
-                                [transforms.Resize(32),
+                                [
+                                transforms.Resize(32),
                                  transforms.Grayscale(num_output_channels=3),
                                  transforms.ToTensor(),
                                 transforms.Normalize(*data_stats[data_name])
                                 ])
-            self.weak = transforms.Compose([transforms.Resize(32),
+            self.weak = transforms.Compose([
+                # transforms.Grayscale(num_output_channels=3),
+                transforms.Resize(32),
                 transforms.Grayscale(num_output_channels=3),
                 transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
                 transforms.ToTensor(),
                 transforms.Normalize(*data_stats[data_name])
                 
             ])
-            self.strong = transforms.Compose([transforms.Resize(32),
+            self.strong = transforms.Compose([
+                # transforms.Grayscale(num_output_channels=3),
+                transforms.Resize(32),
                 transforms.Grayscale(num_output_channels=3),
                 transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
                 # datasets.RandAugment(n=2, m=10),
@@ -496,15 +510,17 @@ class FixTransform(object):
                                 transforms.Normalize(*data_stats[data_name])
                                 ])
             self.weak = transforms.Compose([
-                transforms.Grayscale(num_output_channels=3),
+                # transforms.Grayscale(num_output_channels=3),
                 transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
+                transforms.Grayscale(num_output_channels=3),
                 transforms.ToTensor(),
                 transforms.Normalize(*data_stats[data_name])
                 
             ])
             self.strong = transforms.Compose([
-                transforms.Grayscale(num_output_channels=3),
+                # transforms.Grayscale(num_output_channels=3),
                 transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
+                transforms.Grayscale(num_output_channels=3),
                 # datasets.RandAugment(n=2, m=10),
                 transforms.ToTensor(),
                 transforms.Normalize(*data_stats[data_name])
@@ -570,6 +586,7 @@ class FixTransform(object):
             raise ValueError('Not valid dataset')
 
     def __call__(self, input):
+        # print(input['data'])
         data = self.normal(input['data'])
         augw = self.weak(input['data'])
         augs = self.strong(input['data'])

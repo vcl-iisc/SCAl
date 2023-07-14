@@ -104,7 +104,7 @@ def runExperiment():
     scheduler = make_scheduler(optimizer, 'global')
     metric = Metric({'train': ['Loss', 'Accuracy'], 'test': ['Loss', 'Accuracy']})
     if cfg['resume_mode'] == 1:
-        result = resume(cfg['model_tag'],'best')
+        result = resume(cfg['model_tag'],'checkpoint')
         last_epoch = result['epoch']
         if last_epoch > 1:
             model.load_state_dict(result['model_state_dict'])

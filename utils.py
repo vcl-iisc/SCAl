@@ -114,6 +114,16 @@ def process_dataset(dataset,dataset_unsup= None):
         cfg['target_size_unsup'] = dataset_unsup['train'].target_size
 
     return
+def process_dataset_multi(dataset,dataset_unsup_dict= None):
+    cfg['data_size'] = {'train': len(dataset['train']), 'test': len(dataset['train'])}
+    cfg['target_size'] = dataset['train'].target_size
+    if dataset_unsup_dict is not None:
+        for domain_id,dataset_unsup in dataset_unsup_dict.items():
+            domain = cfg['unsup_list'][domain_id]
+            cfg[f'data_size_unsup_{domain}'] = {'train': len(dataset_unsup['train']), 'test': len(dataset_unsup['train'])}
+            cfg[f'target_size_unsup_{domain}'] = dataset_unsup['train'].target_size
+
+    return
 
 
 def process_control():
@@ -122,7 +132,7 @@ def process_control():
     cfg['num_supervised'] = int(cfg['control']['num_supervised'])
     # data_shape = {'MNIST': [1, 28, 28], 'FashionMNIST': [1, 28, 28], 'CIFAR10': [3, 32, 32], 'CIFAR100': [3, 32, 32],
     #               'SVHN': [3, 32, 32]}
-    data_shape = {'MNIST': [3, 28, 28], 'FashionMNIST': [1, 28, 28], 'CIFAR10': [3, 32, 32], 'CIFAR100': [3, 32, 32],
+    data_shape = {'MNIST': [3, 28, 28],'MNIST_M': [3, 28, 28], 'FashionMNIST': [1, 28, 28], 'CIFAR10': [3, 32, 32], 'CIFAR100': [3, 32, 32],
                   'SVHN': [3, 32, 32],'USPS':[3,16,16],'office31':[3,1000,1000]}#,'amazon':[3,300,300],'webcam':[3,477,477]}
     cfg['data_shape'] = data_shape[cfg['data_name']]
     cfg['conv'] = {'hidden_size': [32, 64]}
@@ -257,8 +267,10 @@ def make_scheduler(optimizer, tag):
         scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=cfg[tag]['milestones'],
                                                    gamma=cfg[tag]['factor'])
     elif cfg[tag]['scheduler_name'] == 'ExponentialLR':
+        # print('trueeeeeeee')
         scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99)
     elif cfg[tag]['scheduler_name'] == 'CosineAnnealingLR':
+        # print('trueeeeeeee')
         scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg[tag]['num_epochs'], eta_min=0)
     elif cfg[tag]['scheduler_name'] == 'ReduceLROnPlateau':
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=cfg[tag]['factor'],
