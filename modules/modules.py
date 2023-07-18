@@ -19,6 +19,7 @@ from net_utils import EMA_update_multi_feat_cent_with_feat_simi
 class Server:
     def __init__(self, model):
         self.model_state_dict = save_model_state_dict(model.state_dict())
+        self.avg_cent = None
         # self.model_state_dict = save_model_state_dict(model.module.state_dict() if cfg['world_size'] > 1 else model.state_dict())
         if 'fmatch' in cfg['loss_mode']:
             optimizer = make_optimizer(model.make_sigma_parameters(), 'local')
@@ -79,6 +80,12 @@ class Server:
         for m in range(len(client)):
             if client[m].active:
                 client[m].model_state_dict = copy.deepcopy(model_state_dict)
+                if cfg['avg_cent']:
+                    if self.avg_cent is not None:
+                        client[m].avg_cent = self.avg_cent
+                    else:
+                        client[m].avg_cent = None
+                        print('ERROR:server.avg_cent is None')
         return
     def distribute_fix_model(self, client, batchnorm_dataset=None):
         # model = eval('models.{}().to(cfg["device"])'.format(cfg['model_name']))
@@ -267,6 +274,18 @@ class Server:
                     self.model_state_dict = save_model_state_dict(model.state_dict())
         else:
             raise ValueError('Not valid loss mode')
+        if cfg['avg_cent'] == 1:
+            for i in range(len(client)):
+                if client[i].active == True and client[i].cent is not None:
+                    if i==0:
+                        self.avg_cent=client[i].cent
+                    else:
+                        self.avg_cent+=client[i].cent
+                elif client[i].cent is None:
+                    print('client cent is None')
+            if self.avg_cent is not None:
+                self.avg_cent=self.avg_cent/len(client)
+
         for i in range(len(client)):
             client[i].active = False
         return
@@ -415,6 +434,8 @@ class Client:
         self.supervised= False
         self.domain = None
         self.domain_id = None
+        self.cent = None
+        self.avg_cent = None
         self.beta = torch.distributions.beta.Beta(torch.tensor([cfg['alpha']]), torch.tensor([cfg['alpha']]))
         self.verbose = cfg['verbose']
         self.EL_loss = elr_loss(500)
@@ -1191,7 +1212,8 @@ class Client:
             else:
                 num_batches = None
             # num_batches =None
-            for epoch in range(1, cfg['client']['num_epochs']+1 ):
+            # for epoch in range(1, cfg['client']['num_epochs']+1 ):
+            for epoch in range(0, cfg['client']['num_epochs'] ):
                 # data_loader = make_data_loader({'train': dataset}, 'client')['train']
                 # with torch.no_grad():
                 #     model.eval()
@@ -1254,7 +1276,9 @@ class Client:
                 #     # output = model(input)
                 #     # print(output.keys())
                     output = {}
-                    loss = bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch)
+                    # print(self.cent)
+                    loss,cent = bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,self.cent,self.avg_cent)
+                    self.cent = cent
                     output['loss'] = loss
                     # output['loss'] = output['loss'].mean() if cfg['world_size'] > 1 else output['loss']
                     # output['loss'].backward()
@@ -1263,8 +1287,8 @@ class Client:
                     # evaluation = metric.evaluate(metric.metric_name['train'], input, output)
                     # evaluation = metric.evaluate(['Loss', 'Accuracy'], input, output)
                     # logger.append(evaluation, 'train', n=input_size)
-                    if num_batches is not None and i == num_batches - 1:
-                        break
+                    # if num_batches is not None and i == num_batches - 1:
+                    #     break
         elif 'fix' in cfg['loss_mode'] and 'mix' in cfg['loss_mode'] and CI_dataset is  None:
             fix_dataset, mix_dataset,_ = dataset
             fix_data_loader = make_data_loader({'train': fix_dataset}, 'client')['train']
@@ -1368,12 +1392,13 @@ class Client:
         self.model_state_dict = save_model_state_dict(model.state_dict())
         # self.model_state_dict = save_model_state_dict(model.module.state_dict() if cfg['world_size'] > 1 else model.state_dict())
         return
-def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch):
+def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg_cent):
     loss_stack = []
     with torch.no_grad():
         model.eval()
         # print("update psd label bank!")
         glob_multi_feat_cent, all_psd_label = init_multi_cent_psd_label(model,test_data_loader)
+        # print(glob_multi_feat_cent.squeeze().shape)
         # print(all_psd_label.shape)
         # if epoch%2==0:
         #     print(glob_multi_feat_cent.shape)
@@ -1401,7 +1426,7 @@ def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch):
         #     ax.legend(fontsize='large', markerscale=2)
         #     plt.show()
         #     exit()
-        model.train()
+    model.train()
     epoch_idx=epoch
     for i, input in enumerate(train_data_loader):
         # print(i)
@@ -1447,6 +1472,15 @@ def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch):
         #==================================================================#
         # lr_scheduler(optimizer, iter_idx, iter_max)
         # optimizer.zero_grad()
+        #==================================================================#
+        # print(cent.shape,avg_cent.shape)
+        if cfg['avg_cent'] and avg_cent is not None:
+            dist=0
+            for avg_ci,ci in zip(avg_cent.squeeze(),cent.squeeze()):
+                dist += np.sqrt(np.sum((avg_ci-ci)**2,axis=0))
+            loss += dist/avg_cent.shape[0]
+
+
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
         optimizer.step()
@@ -1455,9 +1489,10 @@ def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch):
             glob_multi_feat_cent = EMA_update_multi_feat_cent_with_feat_simi(glob_multi_feat_cent, embed_feat, decay=0.9999)
         # output = model(input)
         # print(output.keys())
+        cent = glob_multi_feat_cent
     train_loss = np.mean(loss_stack)
 
-    return train_loss
+    return train_loss,cent
 def save_model_state_dict(model_state_dict):
     return {k: v.cpu() for k, v in model_state_dict.items()}
 
