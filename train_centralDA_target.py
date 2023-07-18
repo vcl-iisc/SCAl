@@ -10,7 +10,7 @@ import torch.backends.cudnn as cudnn
 from config import cfg, process_args
 from data import fetch_dataset, make_data_loader, separate_dataset_su, make_batchnorm_stats,FixTransform
 from data import fetch_dataset, split_dataset, make_data_loader, separate_dataset,separate_dataset_DA, separate_dataset_su, \
-    make_batchnorm_dataset_su, make_batchnorm_stats , split_class_dataset,split_class_dataset_DA
+    make_batchnorm_dataset_su, make_batchnorm_stats , split_class_dataset,split_class_dataset_DA,make_data_loader_DA
 from metrics import Metric
 from utils import save, to_device, process_control, process_dataset, make_optimizer, make_scheduler, resume, collate,load
 from logger import make_logger
@@ -33,9 +33,17 @@ process_args(args)
 def main():
     process_control()
     seeds = list(range(cfg['init_seed'], cfg['init_seed'] + cfg['num_experiments']))
+    exp_num = cfg['control_name'].split('_')[0]
+    exp_name = cfg['control_name'].split('_')[1]
     for i in range(cfg['num_experiments']):
-        model_tag_list = [str(seeds[i]), cfg['data_name'], cfg['data_name_unsup'], cfg['model_name']]
+        if cfg['data_name'] == 'office31':
+            model_tag_list = [str(seeds[i]), cfg['domain_s'],cfg['domain_u'],str(cfg['var_lr']), cfg['model_name'],exp_num,exp_name]
+            model_tag_list_load = [str(seeds[i]), cfg['domain_s'],str(cfg['var_lr']), cfg['model_name'],exp_num,exp_name]
+        else:
+            model_tag_list_load = [str(seeds[i]), cfg['data_name'], cfg['model_name'],exp_num,exp_name]
+            model_tag_list = [str(seeds[i]), cfg['data_name'], cfg['domain_u'] ,cfg['model_name'],exp_num,exp_name]
         cfg['model_tag'] = '_'.join([x for x in model_tag_list if x])
+        cfg['model_tag_load'] = '_'.join([x for x in model_tag_list_load if x])
         print('Experiment: {}'.format(cfg['model_tag']))
         runExperiment()
     return
@@ -46,11 +54,14 @@ def runExperiment():
     torch.manual_seed(cfg['seed'])
     torch.cuda.manual_seed(cfg['seed'])
     # dataset = fetch_dataset(cfg['data_name'])
-    client_dataset_sup = fetch_dataset(cfg['data_name'])
+    ####
+    client_dataset_sup = fetch_dataset(cfg['data_name'],domain=cfg['domain_s'])
     # print(cfg['data_name_unsup'])
-    client_dataset_unsup = fetch_dataset(cfg['data_name_unsup'])
+    client_dataset_unsup = fetch_dataset(cfg['data_name_unsup'],domain=cfg['domain_u'])
+    #####
     # print(len(dataset['test']))
     # process_dataset(dataset)
+    print(cfg['domain_u'])
     process_dataset(client_dataset_sup,client_dataset_unsup)
     # cfg['num_supervised'] == -1
     # client_dataset_sup['train'], _, supervised_idx_sup = separate_dataset_su(client_dataset_sup['train'])
@@ -67,10 +78,16 @@ def runExperiment():
     # client_dataset_sup['train'].transform = transform_sup
     transform_unsup = FixTransform(cfg['data_name_unsup'])
     client_dataset_unsup['train'].transform = transform_unsup
+    if not cfg['test_10_crop']:
+        client_dataset_unsup['test'].transform = transform_unsup
     # data_loader_sup = make_data_loader(client_dataset_sup, 'global')
-    data_loader_unsup = make_data_loader(client_dataset_unsup, 'global')
+    bt = cfg['bt']
+    cfg['global']['batch_size']={'train':bt,'test':50}
+    print(cfg['global']['batch_size'])
+    data_loader_sup = make_data_loader_DA(client_dataset_sup, 'global')
+    data_loader_unsup = make_data_loader_DA(client_dataset_unsup, 'global')
     model_t = eval('models.{}().to(cfg["device"])'.format(cfg['model_name']))
-    
+
 
 
 
@@ -86,9 +103,12 @@ def runExperiment():
     optimizer = make_optimizer(model_t.parameters(), 'local')
     scheduler = make_scheduler(optimizer, 'global')
     metric = Metric({'train': ['Loss', 'Accuracy'], 'test': ['Loss', 'Accuracy']})
-    temp = cfg['data_name']
-    cfg['model_tag'] = f'0_{temp}_resnet9_0_sup_100_0.1_iid_5-5_0.07_1'
-    result = resume(cfg['model_tag'],'best')
+    # temp = cfg['data_name']
+    # cfg['model_tag'] = f'0_{temp}_resnet9_0_sup_100_0.1_iid_5-5_0.07_1'
+    print(cfg['model_tag'])
+    print(cfg['model_tag_load'])
+    # exit()
+    result = resume(cfg['model_tag_load'],'best')
     # result = load('./output/model/{}_{}.pt'.format(cfg['model_tag'], 'best'))
     model_t.load_state_dict(result['model_state_dict'])
     # if cfg['resume_mode'] == 1:
@@ -110,9 +130,11 @@ def runExperiment():
     # print(list(model.buffers()))
     cfg['global']['num_epochs'] = cfg['cycles']  
     epoch  = 0
-    test(data_loader_unsup['test'], model_t, metric, logger, epoch)
+    # print(torch.cuda.memory_summary(device=1))
+    test_DA(data_loader_sup['test'], model_t, metric, logger, epoch)
+    test_DA(data_loader_unsup['test'], model_t, metric, logger, epoch)
 
-
+    
     for epoch in range(last_epoch, cfg[cfg['model_name']]['num_epochs'] + 1):
         # cfg['model_name'] = 'local'
         logger.safe(True)
@@ -125,7 +147,7 @@ def runExperiment():
         # print(list(model.buffers()))
         # module = model.layer1[0].n1
         # print(list(module.named_buffers()))
-        test(data_loader_unsup['test'], test_model, metric, logger, epoch)
+        test_DA(data_loader_unsup['test'], test_model, metric, logger, epoch)
         # print(list(model.buffers()))
         # module = model.layer1[0].n1
         # print(list(module.named_buffers()))
@@ -135,7 +157,7 @@ def runExperiment():
         result = {'cfg': cfg, 'epoch': epoch + 1,
                   'model_state_dict': model_state_dict, 'optimizer_state_dict': optimizer.state_dict(),
                   'scheduler_state_dict': scheduler.state_dict(), 'logger': logger}
-        if epoch%5==0:
+        if epoch%1==0:
             print('saving')
             save(result, './output/model_t/{}_checkpoint.pt'.format(cfg['model_tag']))
             if metric.compare(logger.mean['test/{}'.format(metric.pivot_name)]):
@@ -293,7 +315,7 @@ def train(data_loader, model, optimizer, metric, logger, epoch):
 
 def train_da(dataset, model, optimizer, metric, logger, epoch):
     train_data_loader = make_data_loader({'train': dataset}, 'client')['train']
-    test_data_loader = make_data_loader({'train': dataset},'client',batch_size = {'train':500},shuffle={'train':False})['train']
+    test_data_loader = make_data_loader({'train': dataset},'client',batch_size = {'train':50},shuffle={'train':False})['train']
     # model.train(True)
     start_time = time.time()
     loss_stack = []
@@ -407,6 +429,52 @@ def test(data_loader, model, metric, logger, epoch):
         info = {'info': ['Model: {}'.format(cfg['model_tag']), 'Test Epoch: {}({:.0f}%)'.format(epoch, 100.)]}
         logger.append(info, 'test', mean=False)
         print(logger.write('test', metric.metric_name['test']))
+    return
+
+def test_DA(data_loader, model, metric, logger, epoch):
+    with torch.no_grad():
+        model.train(False)
+        if cfg['test_10_crop']:
+            # iter_test = [iter(data_loader[i]) for i in range(10)]
+            for j in range(10):
+                # print(type(data_loader[j]))
+                for i, input in enumerate(data_loader[j]):
+                    # print(type(input))
+                    input = collate(input)
+                    input_size = input['data'].size(0)
+                    input = to_device(input, cfg['device'])
+                    input['loss_mode'] = cfg['loss_mode']
+                    input['supervised_mode'] = False
+                    input['test'] = True
+                    output = model(input)
+                    input['test'] = True
+                    output['loss'] = output['loss'].mean() if cfg['world_size'] > 1 else output['loss']
+                    evaluation = metric.evaluate(metric.metric_name['test'], input, output)
+                    logger.append(evaluation, 'test', input_size)
+            
+                
+            info = {'info': ['Model: {}'.format(cfg['model_tag']), 'Test Epoch: {}({:.0f}%)'.format(epoch, 100.)]}
+            logger.append(info, 'test', mean=False)
+            print(logger.write('test', metric.metric_name['test']))
+        else :
+            
+            model.train(False)
+            for i, input in enumerate(data_loader):
+                input = collate(input)
+                input_size = input['data'].size(0)
+                input = to_device(input, cfg['device'])
+                input['loss_mode'] = cfg['loss_mode']
+                input['supervised_mode'] = False
+                input['test'] = True
+                output = model(input)
+                input['test'] = True
+                output['loss'] = output['loss'].mean() if cfg['world_size'] > 1 else output['loss']
+                evaluation = metric.evaluate(metric.metric_name['test'], input, output)
+                logger.append(evaluation, 'test', input_size)
+            info = {'info': ['Model: {}'.format(cfg['model_tag']), 'Test Epoch: {}({:.0f}%)'.format(epoch, 100.)]}
+            logger.append(info, 'test', mean=False)
+            print(logger.write('test', metric.metric_name['test']))
+
     return
 
 

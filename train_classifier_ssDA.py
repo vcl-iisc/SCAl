@@ -28,6 +28,8 @@ process_args(args)
 def main():
     process_control()
     seeds = list(range(cfg['init_seed'], cfg['init_seed'] + cfg['num_experiments']))
+    cfg['unsup_list'] = cfg['unsup_doms'].split('-')
+    print(cfg['unsup_list'])
     exp_num = cfg['control_name'].split('_')[0]
     if cfg['domain_s'] in ['amazon','dslr','webcam']:
         cfg['data_name'] = 'office31'
@@ -35,7 +37,7 @@ def main():
         cfg['data_name'] = cfg['domain_s']
     for i in range(cfg['num_experiments']):
         cfg['domain_tag'] = '_'.join([x for x in cfg['unsup_list'] if x])
-        model_tag_list = [str(seeds[i]), cfg['data_name'],'to',cfg['domain_tag'], cfg['model_name'],exp_num]
+        model_tag_list = [str(seeds[i]), cfg['domain_s'],'to',cfg['domain_tag'], cfg['model_name'],exp_num]
         cfg['model_tag'] = '_'.join([x for x in model_tag_list if x])
         print('Experiment: {}'.format(cfg['model_tag']))
         runExperiment()
@@ -43,6 +45,7 @@ def main():
 
 
 def runExperiment():
+    print(cfg)
     cfg['seed'] = int(cfg['model_tag'].split('_')[0])
     torch.manual_seed(cfg['seed'])
     torch.cuda.manual_seed(cfg['seed'])
@@ -103,6 +106,7 @@ def runExperiment():
         model = torch.nn.DataParallel(model,device_ids = [0, 1])
         model.to(cfg["device"])
     # print(model)
+    cfg['local']['lr'] = cfg['var_lr']
     optimizer = make_optimizer(model.parameters(), 'local')
     scheduler = make_scheduler(optimizer, 'global')
     # if cfg['sbn'] == 1:
@@ -139,6 +143,8 @@ def runExperiment():
         ####
         # print(split_len_sup,split_len_unsup)
         data_split_sup = split_class_dataset_DA(client_dataset_sup,cfg['data_split_mode'],split_len_sup)
+        
+        # print(len(data_split_sup[1]))
         # data_split_unsup = split_class_dataset_DA(client_dataset_unsup,cfg['data_split_mode'],split_len_unsup)
         # print(len(data_split_unsup))
         ####
@@ -147,11 +153,19 @@ def runExperiment():
         for j,(domain_id,dataset_unsup) in enumerate(client_dataset_unsup.items()):
             print(domain_id,j)
             data_split_unsup[domain_id] = split_class_dataset_DA(dataset_unsup,cfg['data_split_mode'],split_len[j])
-            
+            # print(data_split_unsup[domain_id])
         # for k,v in data_split_unsup.items():
         #     print(k,len(v['train']),len(v['test']))
         # exit()
         ####
+        # print(data_split_unsup.keys())
+        # for k,v in data_split_unsup.items():
+        #     # print(k,v)
+        #     for i,j in v.items():
+        #         print(i,len(j))
+        #         for a,b in j.items():
+        #             print(a,len(b))
+
     if cfg['loss_mode'] != 'sup':
         metric = Metric({'train': ['Loss', 'Accuracy', 'PAccuracy', 'MAccuracy', 'LabelRatio'],
                          'test': ['Loss', 'Accuracy']})
@@ -213,6 +227,7 @@ def runExperiment():
         scheduler.step()
         model.load_state_dict(server.model_state_dict)
         #needs to be removed for final clean up
+
         test_model = make_batchnorm_stats_DA( model, 'global')
         test_DA(data_loader_sup['test'], test_model, metric, logger, epoch,sup=True)
         for domain_id,data_loader_unsup_ in data_loader_unsup.items():
@@ -237,7 +252,7 @@ def runExperiment():
             #     shutil.copy('./output/model/{}_checkpoint.pt'.format(cfg['model_tag']),
             #                 './output/model/{}_best.pt'.format(cfg['model_tag']))
             if epoch%1==0:
-                print('saving')
+                print('saving_source')
                 save(result, './output/model/source/{}_checkpoint.pt'.format(cfg['model_tag']))
                 if metric.compare(logger.mean['test/{}'.format(metric.pivot_name)]):
                     metric.update(logger.mean['test/{}'.format(metric.pivot_name)])
@@ -248,7 +263,7 @@ def runExperiment():
             result = {'cfg': cfg, 'epoch': epoch + 1, 'server': server, 'client': client,
                     'optimizer_state_dict': optimizer.state_dict(),
                     'scheduler_state_dict': scheduler.state_dict(),
-                    'data_split_sup': data_split_sup,'data_split_unsup' : data_split_unsup, 'logger': logger,'supervised_clients':supervised_clients }
+                    'data_split_sup': data_split_sup,'data_split_unsup' : data_split_unsup, 'logger': logger,'supervised_clients':supervised_clients,'split_len' : split_len }
             # save(result, './output/model/{}_checkpoint.pt'.format(cfg['model_tag']))
             # if metric.compare(logger.mean['test/{}'.format(metric.pivot_name)]):
             #     metric.update(logger.mean['test/{}'.format(metric.pivot_name)])
@@ -292,15 +307,15 @@ def make_client_DA(model, data_split_sup,data_split_unsup,split_len=None):
     num_supervised_clients = int(np.ceil(cfg['active_rate'] * cfg['num_clients']))
     client_id = torch.arange(cfg['num_clients'])[torch.randperm(cfg['num_clients'])[:num_supervised_clients]].tolist()
     unsup_client_id = list(set(range(cfg['num_clients']))-set(client_id))
-    print(len(unsup_client_id))
-    print(split_len)
+    # print(len(unsup_client_id))
+    # print(split_len)
     unsup_client_id_list = []
     for i,num in enumerate(split_len):
         # print(len(unsup_client_id))
         unsup_client_id_list.append(random.sample(unsup_client_id,num))
         unsup_client_id = list(set(unsup_client_id)-set(unsup_client_id_list[i]))
         # print(unsup_client_id)
-    print(data_split_unsup.keys())
+    # print(data_split_unsup.keys())
     # exit()
     # print(len(unsup_client_id))
     # print(client_id)
@@ -317,6 +332,7 @@ def make_client_DA(model, data_split_sup,data_split_unsup,split_len=None):
                 client[unsup_client_id[i]].domain = domain_
                 client[unsup_client_id[i]].domain_id = j
                 # client[client_id[i]].domian_id = j
+                # print(len(data_split_unsup[j]['train'][i]),'necc')
                 client[unsup_client_id[i]].data_split = {'train': data_split_unsup[j]['train'][i], 'test': data_split_unsup[j]['test'][i]}
     
     # for i in range(100):
@@ -666,6 +682,8 @@ def train_client_multi(client_dataset_sup, client_dataset_unsup, server, client,
             print('entered false')
             domain_id = client[m].domain_id
             # print(client_dataset_unsup.keys())
+
+            print('datasplit_len',len(client[m].data_split['train']))
             dataset_m = separate_dataset_DA(client_dataset_unsup[domain_id]['train'], client[m].data_split['train'],cfg['data_name_unsup'])
         if 'batch' not in cfg['loss_mode'] and 'frgd' not in cfg['loss_mode'] and 'fmatch' not in cfg['loss_mode']:
             # cfg['pred'] = True
@@ -683,6 +701,7 @@ def train_client_multi(client_dataset_sup, client_dataset_unsup, server, client,
                 client[m].trainntune(dataset_m, lr, metric, logger, epoch)
             elif 'sim' in cfg['loss_mode'] or 'sup' in cfg['loss_mode'] or 'bmd' in cfg['loss_mode']:
                 client[m].active = True
+                # print(len(dataset_m))
                 client[m].trainntune(dataset_m, lr, metric, logger, epoch)
             else:
                 client[m].active = False
@@ -753,6 +772,7 @@ def test(data_loader, model, metric, logger, epoch,sup=False):
     return
 
 def test_DA(data_loader, model, metric, logger, epoch,sup=False,domain=None):
+    logger.safe(True)
     if sup:
         tag = 'test_sup'
     else:
@@ -822,6 +842,7 @@ def test_DA(data_loader, model, metric, logger, epoch,sup=False,domain=None):
                 #     logger.append(info, tag , mean=False)
                 #     print(logger.write(tag, metric.metric_name['test']))
 
+    logger.safe(False)
     return
 
 if __name__ == "__main__":

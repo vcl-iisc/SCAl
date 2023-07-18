@@ -16,7 +16,7 @@ data_name: MNIST
 data_name_unsup : MNIST
 model_name: resnet18
 # experiment
-num_supervised_clients: '10'
+num_supervised_clients: 5
 num_workers: 0
 init_seed: 0
 num_experiments: 1
@@ -36,9 +36,11 @@ var_lr : 0.001
 scheduler_name : 'CosineAnnealingLR'
 DA : 1
 domain_s : 'MNIST'
-# domain_u : 'amazon'
+domain_u : 'amazon'
 # unsup_list : ['amazon','webcam']
-unsup_list : ["MNIST_M","USPS"]
+unsup_list : ["MNIST_M"]
+unsup_doms : 'MNIST_M-USPS'
 test_10_crop : False
 bt : 10
 adapt_wt : 0
+avg_cent : 0

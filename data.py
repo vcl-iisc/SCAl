@@ -68,13 +68,28 @@ def fetch_dataset(data_name,domain = None):
                                 transform=crop_list[i]) for i in range(10)]
 
         else:
+            resize_size = 256
+            crop_size = 224
             dataset['test'] = datasets.office31(root=root, split='test',domain = domain,
                                 transform=datasets.Compose([transforms.ToTensor()]))
-            dataset['test'].transform = datasets.Compose([
-            # transforms.Grayscale(num_output_channels=3),
-            transforms.ToTensor(),
-            transforms.Normalize(*data_stats[data_name])
-            ])
+            dataset['test'].transform = datasets.Compose(
+                [
+                                # transforms.CenterCrop(224),
+                                # transforms.ToTensor(),
+                                # transforms.Normalize(*data_stats[data_name])
+                                # # transforms.RandomResizedCrop(224)
+                                ResizeImage(resize_size),
+                                transforms.RandomResizedCrop(crop_size),
+                                transforms.RandomHorizontalFlip(),
+                                transforms.ToTensor(),
+                                transforms.Normalize(*data_stats[data_name])
+                                ]
+
+
+                                                        )
+
+            
+            
         # dataset['train'].transform = datasets.Compose([
         #     transforms.ToTensor(),
         #     transforms.Normalize(*data_stats[data_name])])
@@ -373,6 +388,8 @@ def split_class_dataset_DA(dataset, data_split_mode = 'iid',split_num = 0):
         data_split['test'] = seperate_sup_unsup_DA(dataset['test'],split_num)
     return data_split
 def seperate_sup_unsup_DA(client_dataset,split_num):
+    print('data len')
+    print(len(client_dataset))
     target = torch.tensor(client_dataset.target)
     num_supervised_per_class = len(client_dataset)// (cfg['target_size']*split_num) #samples pre class per client
     data_split={}
