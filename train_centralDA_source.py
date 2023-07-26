@@ -6,6 +6,7 @@ import os
 import shutil
 import time
 import torch
+import torch.nn as nn
 import torch.backends.cudnn as cudnn
 from config import cfg, process_args
 from data import fetch_dataset, make_data_loader, separate_dataset_su, make_batchnorm_stats,FixTransform
@@ -19,7 +20,7 @@ from net_utils import init_multi_cent_psd_label
 from net_utils import EMA_update_multi_feat_cent_with_feat_simi
 import numpy as np
 # from pytorch_adapt.datasets import DataloaderCreator, get_office31
-
+# from utils import init_param
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 cudnn.benchmark = True
@@ -99,10 +100,12 @@ def runExperiment():
     # print(model)
     model = convert_layers(model, torch.nn.BatchNorm2d, torch.nn.GroupNorm, num_groups = 2,convert_weights=False)
     model_t = convert_layers(model_t, torch.nn.BatchNorm2d, torch.nn.GroupNorm, num_groups = 2,convert_weights=False)
+    # model.apply(init_param)
+    # model_t.apply(init_param)
     model = model.to(cfg['device'])
     model_t = model_t.to(cfg['device'])
     print(model)
-    exit()
+    # exit()
     # print(model)
     # exit()
     # for name, module in model.named_modules():
@@ -178,6 +181,7 @@ def runExperiment():
                   'scheduler_state_dict': scheduler.state_dict(), 'logger': logger}
         if epoch%1==0:
             print('saving')
+            print(cfg['model_tag'])
             save(result, './output/model/{}_checkpoint.pt'.format(cfg['model_tag']))
             if metric.compare(logger.mean['test/{}'.format(metric.pivot_name)]):
                 metric.update(logger.mean['test/{}'.format(metric.pivot_name)])
@@ -590,5 +594,20 @@ def convert_layers(model, layer_type_old, layer_type_new, num_groups,convert_wei
             model._modules[name] = layer_new
 
     return model
+def init_param(m):
+    if isinstance(m, nn.Conv2d) and isinstance(m, models.DecConv2d):
+        nn.init.kaiming_normal_(m.sigma_weight, mode='fan_out', nonlinearity='relu')
+        nn.init.kaiming_normal_(m.phi_weight, mode='fan_out', nonlinearity='relu')
+    elif isinstance(m, nn.Conv2d):
+        nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+    elif isinstance(m, nn.BatchNorm2d):
+        m.weight.data.fill_(1)
+        m.bias.data.zero_()
+    elif isinstance(m, torch.nn.GroupNorm):
+        m.weight.data.fill_(1)
+        m.bias.data.zero_()
+    elif isinstance(m, nn.Linear):
+        m.bias.data.zero_()
+    return m
 if __name__ == "__main__":
     main()

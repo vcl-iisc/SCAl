@@ -125,8 +125,9 @@ def runExperiment():
     print(cfg['model_tag'])
     print(cfg['model_tag_load'])
     # exit()
-    result = resume(cfg['model_tag_load'],'checkpoint')
-    # result = load('./output/model/{}_{}.pt'.format(cfg['model_tag'], 'best'))
+    # result = resume(cfg['model_tag_load'],'checkpoint')
+    result = resume(cfg['model_tag_load'],'best')
+    # result = torch.load('./output_new/model/{}_{}.pt'.format(cfg['model_tag_load'], 'checkpoint'))
     model_t.load_state_dict(result['model_state_dict'])
     # if cfg['resume_mode'] == 1:
     #     result = resume(cfg['model_tag'],'best')
@@ -150,12 +151,15 @@ def runExperiment():
     # print(torch.cuda.memory_summary(device=1))
     with torch.no_grad():
         test_model.load_state_dict(model_t.state_dict())
-        test_DA(data_loader_sup['test'], test_model, metric, logger, epoch)
-        test_DA(data_loader_unsup['test'], test_model, metric, logger, epoch)
+        # test_DA(data_loader_sup['test'], test_model, metric, logger, epoch)
+        # test_DA(data_loader_unsup['test'], test_model, metric, logger, epoch)
+        test_DA(data_loader_sup['test'], model_t, metric, logger, epoch)
+        test_DA(data_loader_unsup['test'], model_t, metric, logger, epoch)
+    # exit()
     cfg['local']['lr'] = 1e-2
     param_group = []
     for k, v in model_t.backbone_layer.named_parameters():
-        print(k)
+        # print(k)
         if "bn" in k:
             param_group += [{'params': v, 'lr': cfg['local']['lr']*0.1}]
         else:
@@ -163,13 +167,13 @@ def runExperiment():
 
     
     for k, v in model_t.feat_embed_layer.named_parameters():
-        print(k)
+        # print(k)
         param_group += [{'params': v, 'lr': cfg['local']['lr']}]
     for k, v in model_t.class_layer.named_parameters():
         v.requires_grad = False
 
-    print(model_t)
-    exit()
+    # print(model_t)
+    # exit()
     optimizer = torch.optim.SGD(param_group)
     optimizer = op_copy(optimizer)
     # scheduler = make_scheduler(optimizer, 'global')
@@ -403,11 +407,11 @@ def train_da(dataset, model, optimizer, metric, logger, epoch,scheduler):
         psd_loss = - torch.sum(torch.log(pred_cls) * psd_label, dim=1).mean()
         alpha_ = 1
         beta_ = 0.1
-        if epoch_idx >= 1.0:
-            # loss = ent_loss + 2.0 * psd_loss
-            loss = ent_loss + alpha_ * psd_loss
-        else:
-            loss = -reg_loss +ent_loss
+        # if epoch_idx >= 1.0:
+        #     # loss = ent_loss + 2.0 * psd_loss
+        #     loss = ent_loss + alpha_ * psd_loss
+        # else:
+        #     loss = -reg_loss +ent_loss
         
         #==================================================================#
         # SOFT FEAT SIMI LOSS
@@ -419,10 +423,11 @@ def train_da(dataset, model, optimizer, metric, logger, epoch,scheduler):
         
         dym_psd_loss = - torch.sum(torch.log(pred_cls) * dym_label, dim=1).mean() - torch.sum(torch.log(dym_label) * pred_cls, dim=1).mean()
         
-        if epoch_idx >= 1.0:
-            # loss += 0.5 * dym_psd_loss
-            loss += beta_* dym_psd_loss
+        # if epoch_idx >= 1.0:
+        #     # loss += 0.5 * dym_psd_loss
+        #     loss += beta_* dym_psd_loss
         #==================================================================#
+        loss = ent_loss + 1* psd_loss + 0.1 * dym_psd_loss - reg_loss
         #==================================================================#
         lr_scheduler(optimizer, iter_idx, iter_max)
         # scheduler.step()
@@ -473,7 +478,7 @@ def convert_layers(model, layer_type_old, layer_type_new, convert_weights=False,
 
         if type(module) == layer_type_old:
             layer_old = module
-            layer_new = layer_type_new(module.num_features if num_groups is None else num_groups, module.num_features, module.eps, module.affine) 
+            layer_new = layer_type_new(2, module.num_features, module.eps, module.affine) 
 
             if convert_weights:
                 layer_new.weight = layer_old.weight

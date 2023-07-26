@@ -44,5 +44,5 @@ test_10_crop : False
 bt : 10
 adapt_wt : 0
 avg_cent : 0
-backbone_arch : 'resnet50'
+backbone_arch : 'resnet18'
 embed_feat_dim : 256
