@@ -204,6 +204,7 @@ class ResNet(nn.Module):
     #     return output
     def forward(self, input):
         output = {}
+        # print(cfg['loss_mode'])
         if 'sim' in cfg['loss_mode'] and 'test' not in input:
             if cfg['pred'] == True or 'bl' in cfg['loss_mode']:
                 _,output['target'] = self.f(input['augw'])

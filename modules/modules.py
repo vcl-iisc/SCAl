@@ -1511,10 +1511,10 @@ def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg_
         ent_loss = - torch.sum(torch.log(pred_cls) * pred_cls, dim=1).mean()
         psd_loss = - torch.sum(torch.log(pred_cls) * psd_label, dim=1).mean()
         # print(epoch_idx)
-        if epoch_idx >= 1.0:
-            loss = ent_loss + 2.0 * psd_loss
-        else:
-            loss = - reg_loss + ent_loss
+        # if epoch_idx >= 1.0:
+        #     loss = ent_loss + 2.0 * psd_loss
+        # else:
+        #     loss = - reg_loss + ent_loss
         # print(loss)
         #==================================================================#
         # SOFT FEAT SIMI LOSS
@@ -1525,8 +1525,12 @@ def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg_
         dym_label = torch.softmax(dym_feat_simi, dim=1)    #[N, C]
         dym_psd_loss = - torch.sum(torch.log(pred_cls) * dym_label, dim=1).mean() - torch.sum(torch.log(dym_label) * pred_cls, dim=1).mean()
         
-        if epoch_idx >= 1.0:
-            loss += 0.5 * dym_psd_loss
+        # if epoch_idx >= 1.0:
+        #     loss += 0.5 * dym_psd_loss
+
+        #==================================================================#
+        loss = ent_loss + 1* psd_loss + 0.1 * dym_psd_loss - reg_loss
+        #==================================================================#
         #==================================================================#
         #==================================================================#
         # lr_scheduler(optimizer, iter_idx, iter_max)
