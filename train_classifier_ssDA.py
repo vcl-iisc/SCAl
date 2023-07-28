@@ -29,6 +29,9 @@ process_args(args)
 
 
 def main():
+
+    
+
     process_control()
     seeds = list(range(cfg['init_seed'], cfg['init_seed'] + cfg['num_experiments']))
     cfg['unsup_list'] = cfg['unsup_doms'].split('-')
@@ -114,7 +117,7 @@ def runExperiment():
     optimizer = make_optimizer(model.parameters(), 'local')
     scheduler = make_scheduler(optimizer, 'global')
     # if cfg['sbn'] == 1:
-    #     batchnorm_dataset = make_batchnorm_dataset_su(server_dataset['train'], client_dataset['train'])
+        # batchnorm_dataset = make_batchnorm_dataset_su(server_dataset['train'], client_dataset['train'])
     # elif cfg['sbn'] == 0:
     #     batchnorm_dataset = client_dataset['train']
     # else:
@@ -353,6 +356,7 @@ def make_client_DA(model, data_split_sup,data_split_unsup,split_len=None):
 
 def train_client(client_dataset_sup, client_dataset_unsup, server, client, supervised_clients, optimizer, metric, logger, epoch,mode):
     logger.safe(True)
+    print('ppppppppppppppppppppppp')
     if 'ft' in cfg['loss_mode']:
         if epoch <= cfg['switch_epoch']:
             num_active_clients = int(np.ceil(cfg['active_rate'] * cfg['num_clients']))
@@ -470,8 +474,9 @@ def train_client(client_dataset_sup, client_dataset_unsup, server, client, super
     #         server.distribute(client,client_dataset_sup)
     ################################
     elif 'alt-fix_' in cfg['loss_mode']:
-        print('eeentered entered alt-fix mode')
-        if epoch == 0:# and epoch <=270:
+        print('entered entered alt-fix mode')
+        print(epoch%4)
+        if epoch%4 == 0:# and epoch <=270:
             cfg['loss_mode'] = 'sup'
             print(cfg['loss_mode'])
             num_active_clients = len(supervised_clients)
@@ -481,6 +486,7 @@ def train_client(client_dataset_sup, client_dataset_unsup, server, client, super
             server.distribute(client,client_dataset_sup)
 
         else : # or epoch % 2 == 0:# or epoch >270:
+            domains = []
             cfg['loss_mode'] = 'bmd'
             # cfg['loss_mode'] = 'fix-mix'
             print(cfg['loss_mode'])
@@ -495,6 +501,7 @@ def train_client(client_dataset_sup, client_dataset_unsup, server, client, super
             # client_id = torch.arange(cfg['num_clients'])[torch.randperm(cfg['num_clients'])[:num_active_clients]].tolist()
             for i in range(num_active_clients):
                 client[client_id[i]].active = True
+                domains.append(client[client_id[i]].domain)
             server.distribute(client,client_dataset_unsup)
     # elif 'alt-fix' in cfg['loss_mode']:
     #     print('entered alt-fix mode')
@@ -522,6 +529,7 @@ def train_client(client_dataset_sup, client_dataset_unsup, server, client, super
 
     # server.distribute(client, batchnorm_dataset)
     print(f'traning the following clients {client_id}')
+    print(f'domains of the respective clients{domains}')
     # server.distribute(client,batchnorm_dataset)
     if cfg['kl_loss'] ==1 and epoch==cfg['switch_epoch']:
         server.distribute_fix_model(client,batchnorm_dataset)
@@ -536,7 +544,7 @@ def train_client(client_dataset_sup, client_dataset_unsup, server, client, super
         if client[m].supervised ==  True:
             dataset_m = separate_dataset_DA(client_dataset_sup, client[m].data_split['train'],cfg['data_name'])
         elif client[m].supervised ==  False:
-            print('entered false')
+            # print('entered false')
             dataset_m = separate_dataset_DA(client_dataset_unsup, client[m].data_split['train'],cfg['data_name_unsup'])
         if 'batch' not in cfg['loss_mode'] and 'frgd' not in cfg['loss_mode'] and 'fmatch' not in cfg['loss_mode']:
             # cfg['pred'] = True
@@ -643,7 +651,7 @@ def train_client_multi(client_dataset_sup, client_dataset_unsup, server, client,
 
     elif 'alt-fix_' in cfg['loss_mode']:
         print('eeentered entered alt-fix mode')
-        if epoch== 0:# and epoch <=270:
+        if epoch ==0:# and epoch <=270: // alternate training
             cfg['loss_mode'] = 'sup'
             print(cfg['loss_mode'])
             num_active_clients = len(supervised_clients)

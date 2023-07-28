@@ -79,7 +79,8 @@ class Server:
             model = eval('models.{}()'.format(cfg['model_name']))
             model = torch.nn.DataParallel(model,device_ids = [0, 1])
             model.to(cfg["device"])
-        model.load_state_dict(self.model_state_dict,strict= False)
+        # model.load_state_dict(self.model_state_dict,strict= False)
+        model.load_state_dict(self.model_state_dict)
         # if batchnorm_dataset is not None:
         #     model = make_batchnorm_stats(batchnorm_dataset, model, 'global')
         model_state_dict = save_model_state_dict(model.state_dict())
@@ -852,7 +853,8 @@ class Client:
                 model = eval('models.{}()'.format(cfg['model_name']))
                 model = torch.nn.DataParallel(model,device_ids = [0, 1])
                 model.to(cfg["device"])
-            model.load_state_dict(self.model_state_dict, strict=False)
+            # model.load_state_dict(self.model_state_dict, strict=False)
+            model.load_state_dict(self.model_state_dict)
             self.optimizer_state_dict['param_groups'][0]['lr'] = lr
             optimizer = make_optimizer(model.parameters(), 'local')
             optimizer.load_state_dict(self.optimizer_state_dict)
@@ -1232,21 +1234,22 @@ class Client:
                 model = eval('models.{}()'.format(cfg['model_name']))
                 model = torch.nn.DataParallel(model,device_ids = [0, 1])
                 model.to(cfg["device"])
-            model.load_state_dict(self.model_state_dict, strict=False)
+            # model.load_state_dict(self.model_state_dict, strict=False)
+            model.load_state_dict(self.model_state_dict)
             self.optimizer_state_dict['param_groups'][0]['lr'] = lr
 
             if cfg['model_name'] == 'SFDA':
                 cfg['local']['lr'] = 1e-2
                 param_group = []
                 for k, v in model.backbone_layer.named_parameters():
-                    print(k)
+                    # print(k)
                     if "bn" in k:
                         param_group += [{'params': v, 'lr': cfg['local']['lr']*0.1}]
                     else:
                         v.requires_grad = False
 
                 for k, v in model.feat_embed_layer.named_parameters():
-                    print(k)
+                    # print(k)
                     param_group += [{'params': v, 'lr': cfg['local']['lr']}]
                 for k, v in model.class_layer.named_parameters():
                     v.requires_grad = False
@@ -1560,6 +1563,7 @@ def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg_
 
     return train_loss,cent
 def save_model_state_dict(model_state_dict):
+    # print(model_state_dict.keys())
     return {k: v.cpu() for k, v in model_state_dict.items()}
 
 
