@@ -35,6 +35,8 @@ def main():
     seeds = list(range(cfg['init_seed'], cfg['init_seed'] + cfg['num_experiments']))
     exp_num = cfg['control_name'].split('_')[0]
     exp_name = cfg['control_name'].split('_')[1]
+    x= cfg['var_lr']
+    cfg['var_lr'] = 0.01
     for i in range(cfg['num_experiments']):
         if cfg['data_name'] == 'office31':
             model_tag_list = [str(seeds[i]), cfg['domain_s'],cfg['domain_u'],str(cfg['var_lr']), cfg['model_name'],exp_num,exp_name]
@@ -45,7 +47,9 @@ def main():
         cfg['model_tag'] = '_'.join([x for x in model_tag_list if x])
         cfg['model_tag_load'] = '_'.join([x for x in model_tag_list_load if x])
         print('Experiment: {}'.format(cfg['model_tag']))
+        cfg['var_lr'] = x
         runExperiment()
+    # cfg['var_lr'] = 0.9
     return
 
 def op_copy(optimizer):
@@ -101,8 +105,10 @@ def runExperiment():
     data_loader_unsup = make_data_loader_DA(client_dataset_unsup, 'global')
     model_t = eval('models.{}()'.format(cfg['model_name']))
     test_model = eval('models.{}()'.format(cfg['model_name']))
-    test_model = convert_layers(test_model, torch.nn.BatchNorm2d, torch.nn.GroupNorm, num_groups = 2)
-    model_t = convert_layers(model_t, torch.nn.BatchNorm2d, torch.nn.GroupNorm, num_groups = 2)
+    # test_model = convert_layers(test_model, torch.nn.BatchNorm2d, torch.nn.GroupNorm, num_groups = 2)
+    # model_t = convert_layers(model_t, torch.nn.BatchNorm2d, torch.nn.GroupNorm, num_groups = 2)
+    # test_model = convert_layers(test_model, torch.nn.BatchNorm1d, torch.nn.GroupNorm, num_groups = 2,convert_weights=False)
+    # model_t = convert_layers(model_t, torch.nn.BatchNorm1d, torch.nn.GroupNorm, num_groups = 2,convert_weights=False)
     test_model = test_model.to(cfg['device'])
     model_t = model_t.to(cfg['device'])
     # print(model_t)
@@ -117,17 +123,19 @@ def runExperiment():
 
     # model_t = make_batchnorm_stats(client_dataset_unsup['train'], model, cfg['model_name'])
 
-    # optimizer = make_optimizer(model_t.parameters(), 'local')
-    # scheduler = make_scheduler(optimizer, 'global')
+    optimizer = make_optimizer(model_t.parameters(), 'local')
+    scheduler = make_scheduler(optimizer, 'global')
     metric = Metric({'train': ['Loss', 'Accuracy'], 'test': ['Loss', 'Accuracy']})
     # temp = cfg['data_name']
     # cfg['model_tag'] = f'0_{temp}_resnet9_0_sup_100_0.1_iid_5-5_0.07_1'
     print(cfg['model_tag'])
     print(cfg['model_tag_load'])
     # exit()
-    # result = resume(cfg['model_tag_load'],'checkpoint')
-    result = resume(cfg['model_tag_load'],'best')
+    result = resume(cfg['model_tag_load'],'checkpoint')
+    # result = resume(cfg['model_tag_load'],'best')
     # result = torch.load('./output_new/model/{}_{}.pt'.format(cfg['model_tag_load'], 'checkpoint'))
+    # print(model_t.state_dict().keys())
+    # print(result['model_state_dict'].keys())
     model_t.load_state_dict(result['model_state_dict'])
     # if cfg['resume_mode'] == 1:
     #     result = resume(cfg['model_tag'],'best')
@@ -151,38 +159,41 @@ def runExperiment():
     # print(torch.cuda.memory_summary(device=1))
     with torch.no_grad():
         test_model.load_state_dict(model_t.state_dict())
+        test_model.eval()
         # test_DA(data_loader_sup['test'], test_model, metric, logger, epoch)
         # test_DA(data_loader_unsup['test'], test_model, metric, logger, epoch)
         test_DA(data_loader_sup['test'], model_t, metric, logger, epoch)
         test_DA(data_loader_unsup['test'], model_t, metric, logger, epoch)
     # exit()
-    cfg['local']['lr'] = 1e-2
-    param_group = []
-    for k, v in model_t.backbone_layer.named_parameters():
-        # print(k)
-        if "bn" in k:
-            param_group += [{'params': v, 'lr': cfg['local']['lr']*0.1}]
-        else:
-            v.requires_grad = False
+    # cfg['local']['lr'] = 1e-2
+    # param_group = []
+    # for k, v in model_t.backbone_layer.named_parameters():
+    #     # print(k)
+    #     if "bn" in k:
+    #         # print(k)
+    #         # pass
+    #         param_group += [{'params': v, 'lr': cfg['local']['lr']*1}]
+    #     else:
+    #         v.requires_grad = False
 
     
-    for k, v in model_t.feat_embed_layer.named_parameters():
-        # print(k)
-        param_group += [{'params': v, 'lr': cfg['local']['lr']}]
-    for k, v in model_t.class_layer.named_parameters():
-        v.requires_grad = False
+    # for k, v in model_t.feat_embed_layer.named_parameters():
+    #     # print(k)
+    #     param_group += [{'params': v, 'lr': cfg['local']['lr']}]
+    # for k, v in model_t.class_layer.named_parameters():
+    #     v.requires_grad = False
 
-    # print(model_t)
-    # exit()
-    optimizer = torch.optim.SGD(param_group)
-    optimizer = op_copy(optimizer)
+    # # print(model_t)
+    # # exit()
+    # optimizer = torch.optim.SGD(param_group)
+    # optimizer = op_copy(optimizer)
     # scheduler = make_scheduler(optimizer, 'global')
     for epoch in range(last_epoch, cfg[cfg['model_name']]['num_epochs'] + 1):
         # cfg['model_name'] = 'local'
         logger.safe(True)
         
-        # train_da(client_dataset_unsup['train'], model_t, optimizer, metric, logger, epoch,scheduler)
-        train_da(client_dataset_unsup['train'], model_t, optimizer, metric, logger, epoch,None)
+        train_da(client_dataset_unsup['train'], model_t, optimizer, metric, logger, epoch,scheduler)
+        # train_da(client_dataset_unsup['train'], model_t, optimizer, metric, logger, epoch,None)
         # module = model.layer1[0].n1
         # print(list(module.named_buffers()))
         # print(list(model.buffers()))
@@ -373,10 +384,14 @@ def train_da(dataset, model, optimizer, metric, logger, epoch,scheduler):
         model.eval()
         # print("update psd label bank!")
         glob_multi_feat_cent, all_psd_label = init_multi_cent_psd_label(model,test_data_loader)
-        model.train()
+    
+
+    
+    model.train()
     # print(model)
     
-    
+    # for k, v in model.class_layer.named_parameters():
+    #     v.requires_grad = False
     # model.linear.requires_grad_(False)
     
     print(epoch)
@@ -405,7 +420,7 @@ def train_da(dataset, model, optimizer, metric, logger, epoch,scheduler):
         reg_loss = - torch.sum(torch.log(mean_pred_cls) * mean_pred_cls)
         ent_loss = - torch.sum(torch.log(pred_cls) * pred_cls, dim=1).mean()
         psd_loss = - torch.sum(torch.log(pred_cls) * psd_label, dim=1).mean()
-        alpha_ = 1
+        alpha_ = 0.3
         beta_ = 0.1
         # if epoch_idx >= 1.0:
         #     # loss = ent_loss + 2.0 * psd_loss
@@ -427,10 +442,11 @@ def train_da(dataset, model, optimizer, metric, logger, epoch,scheduler):
         #     # loss += 0.5 * dym_psd_loss
         #     loss += beta_* dym_psd_loss
         #==================================================================#
-        loss = ent_loss + 1* psd_loss + 0.1 * dym_psd_loss - reg_loss
+        # loss = 0.5*ent_loss + 1* psd_loss + 0.1* dym_psd_loss - 1*reg_loss
+        loss = 1*ent_loss + 0.3* psd_loss + 0.1* dym_psd_loss - 1*reg_loss
         #==================================================================#
-        lr_scheduler(optimizer, iter_idx, iter_max)
-        # scheduler.step()
+        # lr_scheduler(optimizer, iter_idx, iter_max)
+        scheduler.step()
         optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
@@ -478,7 +494,7 @@ def convert_layers(model, layer_type_old, layer_type_new, convert_weights=False,
 
         if type(module) == layer_type_old:
             layer_old = module
-            layer_new = layer_type_new(2, module.num_features, module.eps, module.affine) 
+            layer_new = layer_type_new(32, module.num_features, module.eps, module.affine) 
 
             if convert_weights:
                 layer_new.weight = layer_old.weight

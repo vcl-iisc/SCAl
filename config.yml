@@ -47,3 +47,6 @@ avg_cent : 0
 backbone_arch : 'resnet50'
 embed_feat_dim : 256
 tde : 5
+pre_trained : 1
+gamma : 0.1
+decay : 0.9

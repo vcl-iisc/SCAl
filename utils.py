@@ -247,6 +247,7 @@ class Stats(object):
 
 
 def make_optimizer(parameters, tag):
+    print(cfg[tag]['lr'])
     if cfg[tag]['optimizer_name'] == 'SGD':
         optimizer = optim.SGD(parameters, lr=cfg[tag]['lr'], momentum=cfg[tag]['momentum'],
                               weight_decay=cfg[tag]['weight_decay'], nesterov=cfg[tag]['nesterov'])
@@ -271,10 +272,13 @@ def make_scheduler(optimizer, tag):
                                                    gamma=cfg[tag]['factor'])
     elif cfg[tag]['scheduler_name'] == 'ExponentialLR':
         # print('trueeeeeeee')
+        
         scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99)
     elif cfg[tag]['scheduler_name'] == 'CosineAnnealingLR':
         # print('trueeeeeeee')
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg[tag]['num_epochs'], eta_min=0)
+        print(cfg[tag]['num_epochs'])
+        # scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg[tag]['num_epochs'], eta_min=0)
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=50, eta_min=0)
     elif cfg[tag]['scheduler_name'] == 'ReduceLROnPlateau':
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=cfg[tag]['factor'],
                                                          patience=cfg[tag]['patience'], verbose=False,

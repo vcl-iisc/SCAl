@@ -67,7 +67,9 @@ def init_multi_cent_psd_label(model, dataloader, flag=False, flag_NRC=False, con
     # topk_num = max(all_emd_feat.shape[0] // (args.class_num * args.topk_seg), 1)
     # print(all_emd_feat.shape[0])
     print('target',cfg['target_size'],all_emd_feat.shape[0])
-    topk_num = max(all_emd_feat.shape[0] // (cfg['target_size'] * 3), 1)
+    topk_num = max(all_emd_feat.shape[0] // (cfg['target_size'] *3), 1)
+    # topk_num = max(all_emd_feat.shape[0] // (cfg['target_size'] * 20), 1)
+    # topk_num = 3
     print(topk_num)
     all_cls_out = torch.cat(cls_out_stack, dim=0)
     _, all_psd_label = torch.max(all_cls_out, dim=1)
@@ -82,7 +84,9 @@ def init_multi_cent_psd_label(model, dataloader, flag=False, flag_NRC=False, con
     multi_cent_num = 1
     # print(multi_cent_num)
     feat_multi_cent = to_device(torch.zeros((cfg['target_size'], multi_cent_num, cfg['embed_feat_dim'])),cfg['device'])
+    # feat_multi_cent = to_device(torch.zeros((cfg['target_size'], multi_cent_num,2048)),cfg['device'])
     faiss_kmeans = faiss.Kmeans(cfg['embed_feat_dim'], multi_cent_num, niter=100, verbose=False, min_points_per_centroid=1)
+    # faiss_kmeans = faiss.Kmeans(2048, multi_cent_num, niter=100, verbose=False, min_points_per_centroid=1)
     # print(faiss_kmeans)
     iter_nums = 2
     for iter in range(iter_nums):
@@ -112,7 +116,7 @@ def init_multi_cent_psd_label(model, dataloader, flag=False, flag_NRC=False, con
         # print(all_psd_label)
         acc = torch.sum(all_psd_label == all_gt_label) / len(all_gt_label)
         acc_list.append(acc)
-        # print(acc_list)
+        print(acc_list)
     # log = "acc:" + " --> ".join("{:.3f}".format(acc) for acc in acc_list)
     # psd_confu_mat = confusion_matrix(all_gt_label.cpu(), all_psd_label.cpu())
     # psd_acc_list = psd_confu_mat.diagonal()/psd_confu_mat.sum(axis=1) * 100

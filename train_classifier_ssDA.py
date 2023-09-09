@@ -183,7 +183,16 @@ def runExperiment():
     # print(metric.metric_name['train'])
     if cfg['resume_mode'] == 1:
         result = resume_DA(cfg['model_tag'])
+        # result = resume_DA(cfg['model_tag'],load_tag='best')
+        # tag_  = '0_dslr_to_amazon_webcam_resnet50_02'
+        # result = resume_DA(tag_,'checkpoint')
+        # import pickle
+        # path = "/home/sampathkoti/Downloads/R-50-GN.pkl"
+        # # m = pickle.load(open(path, 'rb'))
+        # m = torch.load(path)
+        # print(m.keys())
         last_epoch = result['epoch']
+        # exit()
         if last_epoch > 1:
             data_split_sup = result['data_split_sup']
             data_split_unsup = result['data_split_unsup']
@@ -195,6 +204,7 @@ def runExperiment():
             optimizer.load_state_dict(result['optimizer_state_dict'])
             scheduler.load_state_dict(result['scheduler_state_dict'])
             logger = result['logger']
+            # logger = make_logger(os.path.join('output', 'runs', 'train_{}'.format(cfg['model_tag'])))
             # cfg['loss_mode'] = 'alt-fix'
         else:
             server = make_server(model)
@@ -207,7 +217,7 @@ def runExperiment():
         logger = make_logger(os.path.join('output', 'runs', 'train_{}'.format(cfg['model_tag'])))
     cfg['global']['num_epochs'] = cfg['cycles']  
     mode = cfg['loss_mode']
-    print(model)
+    # print(model)
     for epoch in range(last_epoch, cfg['global']['num_epochs'] + 1):
         if mode == 'sim-ft-fix' or mode == 'sup-ft-fix':
             # print('entered fix-mix',epoch)
@@ -264,13 +274,13 @@ def runExperiment():
             #     metric.update(logger.mean['test/{}'.format(metric.pivot_name)])
             #     shutil.copy('./output/model/{}_checkpoint.pt'.format(cfg['model_tag']),
             #                 './output/model/{}_best.pt'.format(cfg['model_tag']))
-            if epoch%1==0:
-                print('saving_source')
-                save(result, './output/model/source/{}_checkpoint.pt'.format(cfg['model_tag']))
-                if metric.compare(logger.mean['test/{}'.format(metric.pivot_name)]):
-                    metric.update(logger.mean['test/{}'.format(metric.pivot_name)])
-                    shutil.copy('./output/model/source/{}_checkpoint.pt'.format(cfg['model_tag']),
-                                './output/model/source/{}_best.pt'.format(cfg['model_tag']))
+            # if epoch%1==0:
+            print('saving_source')
+            save(result, './output/model/source/{}_checkpoint.pt'.format(cfg['model_tag']))
+            if metric.compare(logger.mean['test/{}'.format(metric.pivot_name)]):
+                metric.update(logger.mean['test/{}'.format(metric.pivot_name)])
+                shutil.copy('./output/model/source/{}_checkpoint.pt'.format(cfg['model_tag']),
+                            './output/model/source/{}_best.pt'.format(cfg['model_tag']))
             
         else :
             result = {'cfg': cfg, 'epoch': epoch + 1, 'server': server, 'client': client,

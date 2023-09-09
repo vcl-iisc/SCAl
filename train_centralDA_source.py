@@ -98,16 +98,33 @@ def runExperiment():
     model = eval('models.{}()'.format(cfg['model_name']))
     model_t = eval('models.{}()'.format(cfg['model_name']))
     # print(model)
-    model = convert_layers(model, torch.nn.BatchNorm2d, torch.nn.GroupNorm, num_groups = 2,convert_weights=False)
-    model_t = convert_layers(model_t, torch.nn.BatchNorm2d, torch.nn.GroupNorm, num_groups = 2,convert_weights=False)
-    model = convert_layers(model, torch.nn.BatchNorm1d, torch.nn.GroupNorm, num_groups = 2,convert_weights=False)
-    model_t = convert_layers(model_t, torch.nn.BatchNorm1d, torch.nn.GroupNorm, num_groups = 2,convert_weights=False)
+    # model = convert_layers(model, torch.nn.BatchNorm2d, torch.nn.GroupNorm, num_groups = 2,convert_weights=False)
+    # model_t = convert_layers(model_t, torch.nn.BatchNorm2d, torch.nn.GroupNorm, num_groups = 2,convert_weights=False)
+    # model = convert_layers(model, torch.nn.BatchNorm1d, torch.nn.GroupNorm, num_groups = 2,convert_weights=False)
+    # model_t = convert_layers(model_t, torch.nn.BatchNorm1d, torch.nn.GroupNorm, num_groups = 2,convert_weights=False)
     # model.apply(init_param)
     # model_t.apply(init_param)
     model = model.to(cfg['device'])
     model_t = model_t.to(cfg['device'])
-    print(model)
+    # pre_model = torch.load('/home/sampathkoti/Downloads/R-50-GN.pkl',encoding= "latin1")
+    # print(pre_model)
+    ####
+    # import pickle
+    # path = "/home/sampathkoti/Downloads/R-50-GN.pkl"
+    # # m = pickle.load(open(path, 'rb'))
+    # # print(m)
+    # with open(path, 'rb') as f:
+    #     m=pickle.load(f,encoding="latin1")
+    # print(model.state_dict().keys())
+    # # print(m['blobs'].keys())
+    # # print(len(model.state_dict().keys()))
+    # for k,v in m['blobs'].items():
+    #     if 'res2_1' in k:
+    #         print(k,v.shape)
+    # # for k,v in model.state_dict().items():
+    # #     print(k,v.shape)
     # exit()
+    ######
     # print(model)
     # exit()
     # for name, module in model.named_modules():
@@ -586,7 +603,7 @@ def convert_layers(model, layer_type_old, layer_type_new, num_groups,convert_wei
         if type(module) == layer_type_old:
             layer_old = module
             # layer_new = layer_type_new(module.num_features if num_groups is None else num_groups, module.num_features, module.eps, module.affine) 
-            layer_new = layer_type_new(2, module.num_features, module.eps, module.affine) 
+            layer_new = layer_type_new(32, module.num_features, module.eps, module.affine) 
 
 
             if convert_weights:

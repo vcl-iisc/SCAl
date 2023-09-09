@@ -79,8 +79,8 @@ class Embedding(nn.Module):
     def __init__(self, feature_dim, embed_dim=256, type="ori"):
     
         super(Embedding, self).__init__()
-        # self.bn = nn.BatchNorm1d(embed_dim, affine=True)
-        self.bn = torch.nn.GroupNorm(2, embed_dim, affine=True)
+        self.bn = nn.BatchNorm1d(embed_dim, affine=True)
+        # self.bn = torch.nn.GroupNorm(2, embed_dim, affine=True)
         self.relu = nn.ReLU(inplace=True)
         self.dropout = nn.Dropout(p=0.5)
         self.bottleneck = nn.Linear(feature_dim, embed_dim)
@@ -171,10 +171,11 @@ class SFDA(nn.Module):
         
         self.backbone_feat_dim = self.backbone_layer.backbone_feat_dim
         
-        # self.feat_embed_layer = Embedding(self.backbone_feat_dim, self.embed_feat_dim, type="bn")
+        self.feat_embed_layer = Embedding(self.backbone_feat_dim, self.embed_feat_dim, type="bn")
         
-        # self.class_layer = Classifier(self.embed_feat_dim, class_num=self.class_num, type="wn")
-        self.class_layer = Classifier(self.backbone_feat_dim, class_num=self.class_num)
+        self.class_layer = Classifier(self.embed_feat_dim, class_num=self.class_num, type="wn")
+        # self.class_layer = Classifier(self.backbone_feat_dim, class_num=self.class_num)
+
     
     def get_emd_feat(self, input_imgs):
         # input_imgs [B, 3, H, W]
@@ -187,17 +188,17 @@ class SFDA(nn.Module):
         # input_imgs [B, 3, H, W]
         backbone_feat = self.backbone_layer(input_imgs)
         # print(backbone_feat.shape)
-        # embed_feat = self.feat_embed_layer(backbone_feat)
+        embed_feat = self.feat_embed_layer(backbone_feat)
         
-        # cls_out = self.class_layer(embed_feat)
-        cls_out = self.class_layer(backbone_feat)
+        cls_out = self.class_layer(embed_feat)
+        # cls_out = self.class_layer(backbone_feat)
         if apply_softmax:
             cls_out = torch.softmax(cls_out, dim=1)
         else:
             pass
         
-        # return embed_feat, cls_out
-        return backbone_feat,cls_out
+        return embed_feat, cls_out
+        # return backbone_feat,cls_out
     def forward(self, input):
         output = {}
         # print(cfg['loss_mode'])
@@ -357,6 +358,319 @@ def resnet_sfda(momentum=None, track=True):
     model = SFDA()
     # model.apply(init_param)
     model.apply(lambda m: make_batchnorm(m, momentum=momentum, track_running_stats=track))
+    return model
+def resnet50(momentum=None, track=True):
+    # data_shape = cfg['data_shape']
+    # target_size = cfg['target_size']
+    # hidden_size = cfg['resnet9']['hidden_size']
+    # # model = ResNet(data_shape, hidden_size, Block, [1, 1, 1, 1], target_size)
+    model = SFDA()
+    model.backbone_arch = 'resnet50'
+    # model = convert_layers(model, torch.nn.BatchNorm2d, torch.nn.GroupNorm, num_groups = 2,convert_weights=False)
+    # model = convert_layers(model, torch.nn.BatchNorm1d, torch.nn.GroupNorm, num_groups = 2,convert_weights=False)
+    if cfg['pre_trained']:
+        model = get_pretrained_GN(model)
+    # model.apply(init_param)
+    # model.apply(lambda m: make_batchnorm(m, momentum=momentum, track_running_stats=track))
+    return model
+def get_pretrained_GN(model):
+    import pickle
+    path = "/home/sampathkoti/Downloads/R-50-GN.pkl"
+    with open(path, 'rb') as f:
+        m=pickle.load(f,encoding="latin1")
+    for k,v in model.state_dict().items():
+        c=['1','2','3']
+        c_=['a','b','c']
+        if k in ['backbone_layer.conv1.weight', 'backbone_layer.bn1.weight', 'backbone_layer.bn1.bias']:
+            if k == 'backbone_layer.conv1.weight' :
+                v=m['blobs']['conv1_w']
+            elif k == 'backbone_layer.bn1.weight':
+                v=m['blobs']['conv1_gn_s']
+            elif k == 'backbone_layer.bn1.bias':
+                v=m['blobs']['conv1_gn_b']
+        elif k in "backbone_layer.layer1":
+            mv = k.split('.')
+            if mv[2]=='0':
+                if 'conv' in k:
+                    v = m['blobs'][f'res2_0_branch2{c_[c.index(mv[3][-1])]}_w']
+                elif 'bn' in k :
+                    if 'weight' in k:
+                        v = m['blobs'][f'res2_0_branch2{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif 'bias' in k:
+                        v = m['blobs'][f'res2_0_branch2{c_[c.index(mv[3][-1])]}_gn_b']
+                elif 'downsample' in k:
+                    if '0.weight' in k:
+                        v = m['blobs'][f'res2_0_branch1{c_[c.index(mv[3][-1])]}_w']
+                    elif '1.weight' in k:
+                        v = m['blobs'][f'res2_0_branch1{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif '1.bias' in k:
+                        v = m['blobs'][f'res2_0_branch1{c_[c.index(mv[3][-1])]}_gn_b']
+            elif mv[2] == "1":
+                if 'conv' in k:
+                    v = m['blobs'][f'res2_1_branch2{c_[c.index(mv[3][-1])]}_w']
+                elif 'bn' in k :
+                    if 'weight' in k:
+                        v = m['blobs'][f'res2_1_branch2{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif 'bias' in k:
+                        v = m['blobs'][f'res2_1_branch2{c_[c.index(mv[3][-1])]}_gn_b']
+                elif 'downsample' in k:
+                    if '0.weight' in k:
+                        v = m['blobs'][f'res2_1_branch1{c_[c.index(mv[3][-1])]}_w']
+                    elif '1.weight' in k:
+                        v = m['blobs'][f'res2_1_branch1{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif '1.bias' in k:
+                        v = m['blobs'][f'res2_1_branch1{c_[c.index(mv[3][-1])]}_gn_b']
+            elif mv[2] == '2':
+                if 'conv' in k:
+                    v = m['blobs'][f'res2_2_branch2{c_[c.index(mv[3][-1])]}_w']
+                elif 'bn' in k :
+                    if 'weight' in k:
+                        v = m['blobs'][f'res2_2_branch2{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif 'bias' in k:
+                        v = m['blobs'][f'res2_2_branch2{c_[c.index(mv[3][-1])]}_gn_b']
+                elif 'downsample' in k:
+                    if '0.weight' in k:
+                        v = m['blobs'][f'res2_2_branch1{c_[c.index(mv[3][-1])]}_w']
+                    elif '1.weight' in k:
+                        v = m['blobs'][f'res2_2_branch1{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif '1.bias' in k:
+                        v = m['blobs'][f'res2_2_branch1{c_[c.index(mv[3][-1])]}_gn_b']
+        elif k in "backbone_layer.layer2":
+            mv = k.split('.')
+            if mv[2]=='0':
+                if 'conv' in k:
+                    v = m['blobs'][f'res3_0_branch2{c_[c.index(mv[3][-1])]}_w']
+                elif 'bn' in k :
+                    if 'weight' in k:
+                        v = m['blobs'][f'res3_0_branch2{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif 'bias' in k:
+                        v = m['blobs'][f'res3_0_branch2{c_[c.index(mv[3][-1])]}_gn_b']
+                elif 'downsample' in k:
+                    if '0.weight' in k:
+                        v = m['blobs'][f'res3_0_branch1{c_[c.index(mv[3][-1])]}_w']
+                    elif '1.weight' in k:
+                        v = m['blobs'][f'res3_0_branch1{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif '1.bias' in k:
+                        v = m['blobs'][f'res3_0_branch1{c_[c.index(mv[3][-1])]}_gn_b']
+            elif mv[2]=='1':
+                if 'conv' in k:
+                    v = m['blobs'][f'res3_1_branch2{c_[c.index(mv[3][-1])]}_w']
+                elif 'bn' in k :
+                    if 'weight' in k:
+                        v = m['blobs'][f'res3_1_branch2{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif 'bias' in k:
+                        v = m['blobs'][f'res3_1_branch2{c_[c.index(mv[3][-1])]}_gn_b']
+                elif 'downsample' in k:
+                    if '0.weight' in k:
+                        v = m['blobs'][f'res3_1_branch1{c_[c.index(mv[3][-1])]}_w']
+                    elif '1.weight' in k:
+                        v = m['blobs'][f'res3_1_branch1{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif '1.bias' in k:
+                        v = m['blobs'][f'res3_1_branch1{c_[c.index(mv[3][-1])]}_gn_b']
+            elif mv[2]=='2':
+                if 'conv' in k:
+                    v = m['blobs'][f'res3_2_branch2{c_[c.index(mv[3][-1])]}_w']
+                elif 'bn' in k :
+                    if 'weight' in k:
+                        v = m['blobs'][f'res3_2_branch2{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif 'bias' in k:
+                        v = m['blobs'][f'res3_2_branch2{c_[c.index(mv[3][-1])]}_gn_b']
+                elif 'downsample' in k:
+                    if '0.weight' in k:
+                        v = m['blobs'][f'res3_2_branch1{c_[c.index(mv[3][-1])]}_w']
+                    elif '1.weight' in k:
+                        v = m['blobs'][f'res3_2_branch1{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif '1.bias' in k:
+                        v = m['blobs'][f'res3_2_branch1{c_[c.index(mv[3][-1])]}_gn_b']
+            elif mv[2]=='3':
+                if 'conv' in k:
+                    v = m['blobs'][f'res3_3_branch2{c_[c.index(mv[3][-1])]}_w']
+                elif 'bn' in k :
+                    if 'weight' in k:
+                        v = m['blobs'][f'res3_3_branch2{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif 'bias' in k:
+                        v = m['blobs'][f'res3_3_branch2{c_[c.index(mv[3][-1])]}_gn_b']
+                elif 'downsample' in k:
+                    if '0.weight' in k:
+                        v = m['blobs'][f'res3_3_branch1{c_[c.index(mv[3][-1])]}_w']
+                    elif '1.weight' in k:
+                        v = m['blobs'][f'res3_3_branch1{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif '1.bias' in k:
+                        v = m['blobs'][f'res3_3_branch1{c_[c.index(mv[3][-1])]}_gn_b']
+        elif k in "backbone_layer.layer3":
+            mv = k.split('.')
+            if mv[2]=='0':
+                if 'conv' in k:
+                    v = m['blobs'][f'res4_0_branch2{c_[c.index(mv[3][-1])]}_w']
+                elif 'bn' in k :
+                    if 'weight' in k:
+                        v = m['blobs'][f'res4_0_branch2{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif 'bias' in k:
+                        v = m['blobs'][f'res4_0_branch2{c_[c.index(mv[3][-1])]}_gn_b']
+                elif 'downsample' in k:
+                    if '0.weight' in k:
+                        v = m['blobs'][f'res4_0_branch1{c_[c.index(mv[3][-1])]}_w']
+                    elif '1.weight' in k:
+                        v = m['blobs'][f'res4_0_branch1{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif '1.bias' in k:
+                        v = m['blobs'][f'res4_0_branch1{c_[c.index(mv[3][-1])]}_gn_b']
+            elif mv[2]=='1':
+                if 'conv' in k:
+                    v = m['blobs'][f'res4_1_branch2{c_[c.index(mv[3][-1])]}_w']
+                elif 'bn' in k :
+                    if 'weight' in k:
+                        v = m['blobs'][f'res4_1_branch2{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif 'bias' in k:
+                        v = m['blobs'][f'res4_1_branch2{c_[c.index(mv[3][-1])]}_gn_b']
+                elif 'downsample' in k:
+                    if '0.weight' in k:
+                        v = m['blobs'][f'res4_1_branch1{c_[c.index(mv[3][-1])]}_w']
+                    elif '1.weight' in k:
+                        v = m['blobs'][f'res4_1_branch1{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif '1.bias' in k:
+                        v = m['blobs'][f'res4_1_branch1{c_[c.index(mv[3][-1])]}_gn_b']
+            elif mv[2]=='2':
+                if 'conv' in k:
+                    v = m['blobs'][f'res4_2_branch2{c_[c.index(mv[3][-1])]}_w']
+                elif 'bn' in k :
+                    if 'weight' in k:
+                        v = m['blobs'][f'res4_2_branch2{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif 'bias' in k:
+                        v = m['blobs'][f'res4_2_branch2{c_[c.index(mv[3][-1])]}_gn_b']
+                elif 'downsample' in k:
+                    if '0.weight' in k:
+                        v = m['blobs'][f'res4_2_branch1{c_[c.index(mv[3][-1])]}_w']
+                    elif '1.weight' in k:
+                        v = m['blobs'][f'res4_2_branch1{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif '1.bias' in k:
+                        v = m['blobs'][f'res4_2_branch1{c_[c.index(mv[3][-1])]}_gn_b']
+            elif mv[2]=='3':
+                if 'conv' in k:
+                    v = m['blobs'][f'res4_3_branch2{c_[c.index(mv[3][-1])]}_w']
+                elif 'bn' in k :
+                    if 'weight' in k:
+                        v = m['blobs'][f'res4_3_branch2{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif 'bias' in k:
+                        v = m['blobs'][f'res4_3_branch2{c_[c.index(mv[3][-1])]}_gn_b']
+                elif 'downsample' in k:
+                    if '0.weight' in k:
+                        v = m['blobs'][f'res4_3_branch1{c_[c.index(mv[3][-1])]}_w']
+                    elif '1.weight' in k:
+                        v = m['blobs'][f'res4_3_branch1{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif '1.bias' in k:
+                        v = m['blobs'][f'res4_3_branch1{c_[c.index(mv[3][-1])]}_gn_b']
+            elif mv[2]=='4':
+                if 'conv' in k:
+                    v = m['blobs'][f'res4_4_branch2{c_[c.index(mv[3][-1])]}_w']
+                elif 'bn' in k :
+                    if 'weight' in k:
+                        v = m['blobs'][f'res4_4_branch2{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif 'bias' in k:
+                        v = m['blobs'][f'res4_4_branch2{c_[c.index(mv[3][-1])]}_gn_b']
+                elif 'downsample' in k:
+                    if '0.weight' in k:
+                        v = m['blobs'][f'res4_4_branch1{c_[c.index(mv[3][-1])]}_w']
+                    elif '1.weight' in k:
+                        v = m['blobs'][f'res4_4_branch1{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif '1.bias' in k:
+                        v = m['blobs'][f'res4_4_branch1{c_[c.index(mv[3][-1])]}_gn_b']
+            elif mv[2]=='5':
+                if 'conv' in k:
+                    v = m['blobs'][f'res4_5_branch2{c_[c.index(mv[3][-1])]}_w']
+                elif 'bn' in k :
+                    if 'weight' in k:
+                        v = m['blobs'][f'res4_5_branch2{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif 'bias' in k:
+                        v = m['blobs'][f'res4_5_branch2{c_[c.index(mv[3][-1])]}_gn_b']
+                elif 'downsample' in k:
+                    if '0.weight' in k:
+                        v = m['blobs'][f'res4_5_branch1{c_[c.index(mv[3][-1])]}_w']
+                    elif '1.weight' in k:
+                        v = m['blobs'][f'res4_5_branch1{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif '1.bias' in k:
+                        v = m['blobs'][f'res4_5_branch1{c_[c.index(mv[3][-1])]}_gn_b']
+        elif k  in "backbone_layer.layer4":
+            mv = k.split('.')
+            if mv[2]=='0':
+                if 'conv' in k:
+                    v = m['blobs'][f'res5_0_branch2{c_[c.index(mv[3][-1])]}_w']
+                elif 'bn' in k :
+                    if 'weight' in k:
+                        v = m['blobs'][f'res5_0_branch2{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif 'bias' in k:
+                        v = m['blobs'][f'res5_0_branch2{c_[c.index(mv[3][-1])]}_gn_b']
+                elif 'downsample' in k:
+                    if '0.weight' in k:
+                        v = m['blobs'][f'res5_0_branch1{c_[c.index(mv[3][-1])]}_w']
+                    elif '1.weight' in k:
+                        v = m['blobs'][f'res5_0_branch1{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif '1.bias' in k:
+                        v = m['blobs'][f'res5_0_branch1{c_[c.index(mv[3][-1])]}_gn_b']
+            elif mv[2]=='1':
+                if 'conv' in k:
+                    v = m['blobs'][f'res5_1_branch2{c_[c.index(mv[3][-1])]}_w']
+                elif 'bn' in k :
+                    if 'weight' in k:
+                        v = m['blobs'][f'res5_1_branch2{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif 'bias' in k:
+                        v = m['blobs'][f'res5_1_branch2{c_[c.index(mv[3][-1])]}_gn_b']
+                elif 'downsample' in k:
+                    if '0.weight' in k:
+                        v = m['blobs'][f'res5_1_branch1{c_[c.index(mv[3][-1])]}_w']
+                    elif '1.weight' in k:
+                        v = m['blobs'][f'res5_1_branch1{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif '1.bias' in k:
+                        v = m['blobs'][f'res5_1_branch1{c_[c.index(mv[3][-1])]}_gn_b']
+            elif mv[2]=='2':
+                if 'conv' in k:
+                    v = m['blobs'][f'res5_2_branch2{c_[c.index(mv[3][-1])]}_w']
+                elif 'bn' in k :
+                    if 'weight' in k:
+                        v = m['blobs'][f'res5_2_branch2{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif 'bias' in k:
+                        v = m['blobs'][f'res5_2_branch2{c_[c.index(mv[3][-1])]}_gn_b']
+                elif 'downsample' in k:
+                    if '0.weight' in k:
+                        v = m['blobs'][f'res5_2_branch1{c_[c.index(mv[3][-1])]}_w']
+                    elif '1.weight' in k:
+                        v = m['blobs'][f'res5_2_branch1{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif '1.bias' in k:
+                        v = m['blobs'][f'res5_2_branch1{c_[c.index(mv[3][-1])]}_gn_b']
+            elif mv[2]=='3':
+                if 'conv' in k:
+                    v = m['blobs'][f'res5_3_branch2{c_[c.index(mv[3][-1])]}_w']
+                elif 'bn' in k :
+                    if 'weight' in k:
+                        v = m['blobs'][f'res5_3_branch2{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif 'bias' in k:
+                        v = m['blobs'][f'res5_3_branch2{c_[c.index(mv[3][-1])]}_gn_b']
+                elif 'downsample' in k:
+                    if '0.weight' in k:
+                        v = m['blobs'][f'res5_3_branch1{c_[c.index(mv[3][-1])]}_w']
+                    elif '1.weight' in k:
+                        v = m['blobs'][f'res5_3_branch1{c_[c.index(mv[3][-1])]}_gn_s']
+                    elif '1.bias' in k:
+                        v = m['blobs'][f'res5_3_branch1{c_[c.index(mv[3][-1])]}_gn_b']
+
+    return model
+def convert_layers(model, layer_type_old, layer_type_new, num_groups,convert_weights=False):
+    for name, module in reversed(model._modules.items()):
+        if len(list(module.children())) > 0:
+            # recurse
+            model._modules[name] = convert_layers(module, layer_type_old, layer_type_new, convert_weights)
+
+        if type(module) == layer_type_old:
+            layer_old = module
+            # layer_new = layer_type_new(module.num_features if num_groups is None else num_groups, module.num_features, module.eps, module.affine) 
+            layer_new = layer_type_new(32, module.num_features, module.eps, module.affine) 
+
+
+            if convert_weights:
+                layer_new.weight = layer_old.weight
+                layer_new.bias = layer_old.bias
+
+            model._modules[name] = layer_new
+
     return model
 if __name__ == "__main__":
     
