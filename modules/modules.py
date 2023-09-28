@@ -21,6 +21,8 @@ class Server:
     def __init__(self, model):
         self.model_state_dict = save_model_state_dict(model.state_dict())
         self.avg_cent = None
+        self.avg_cent_ = None
+        # self.decay = 0.9
         # self.model_state_dict = save_model_state_dict(model.module.state_dict() if cfg['world_size'] > 1 else model.state_dict())
         if 'fmatch' in cfg['loss_mode']:
             optimizer = make_optimizer(model.make_sigma_parameters(), 'local')
@@ -30,6 +32,9 @@ class Server:
             global_optimizer = make_optimizer(model.parameters(), 'global')
         self.optimizer_state_dict = save_optimizer_state_dict(optimizer.state_dict())
         self.global_optimizer_state_dict = save_optimizer_state_dict(global_optimizer.state_dict())
+
+
+
     def compute_dist(self,w1_in,w2_in,crit):
         if crit == 'mse':
             # return torch.mean((w1_in.reshape(-1).detach() - w2_in.reshape(-1).detach())**2)
@@ -60,7 +65,7 @@ class Server:
                 for m in range(len(valid_client)):
                     num = self.compute_dist(valid_client[m].model_state_dict[k],param_prev_g[k],crit)
                     den = self.compute_dist(valid_client[m].model_state_dict[k],param_avg[k],crit)
-                    ll_div_weights[k].append(torch.exp(0.9*(num-den)))
+                    ll_div_weights[k].append(torch.exp(cfg['tau']*(num-den)))
                     # ll_div_weights[k].append(torch.exp(0.1*num/(den+1e-5)))
             #print("ll_div_weights[k]:",ll_div_weights[k])
             ll_div_weights[k] = torch.div(torch.Tensor(ll_div_weights[k]),sum(ll_div_weights[k]))
@@ -351,14 +356,18 @@ class Server:
                 # print(self.avg_cent,client[i].cent)
                 if client[i].active == True and client[i].cent is not None:
                     if count==0:
-                        self.avg_cent=client[i].cent
+                        self.avg_cent_=client[i].cent
                         count+=1
                     else:
-                        self.avg_cent+=client[i].cent
+                        self.avg_cent_+=client[i].cent
                 elif client[i].active == True  and client[i].cent is None:
                     print('Warning:client centntroid is None')
-            if self.avg_cent is not None:
-                self.avg_cent=self.avg_cent/len(client)
+            if self.avg_cent_ is not None:
+                self.avg_cent_=self.avg_cent_/len(client)
+                if self.avg_cent == None:
+                    self.avg_cent = self.avg_cent_
+                self.avg_cent = cfg['decay']*self.avg_cent+(1-cfg['decay'])*self.avg_cent_
+                 
 
         for i in range(len(client)):
             client[i].active = False
@@ -912,6 +921,8 @@ class Client:
                 for i, input in enumerate(data_loader):
                     input = collate(input)
                     input_size = input['data'].size(0)
+                    if input_size == 1:
+                        break
                     input['loss_mode'] = cfg['loss_mode']
                     input = to_device(input, cfg['device'])
                     optimizer.zero_grad()
@@ -1279,13 +1290,17 @@ class Client:
             model.load_state_dict(self.model_state_dict)
             self.optimizer_state_dict['param_groups'][0]['lr'] = lr
 
-            if cfg['model_name'] == 'SFDA':
+            if cfg['model_name'] == 'resnet50' and cfg['par'] == 1:
+                print('freezing')
                 cfg['local']['lr'] = lr
+                # cfg['local']['lr'] = 0.001
                 param_group = []
                 for k, v in model.backbone_layer.named_parameters():
                     # print(k)
                     if "bn" in k:
-                        param_group += [{'params': v, 'lr': cfg['local']['lr']*0.1}]
+                        # param_group += [{'params': v, 'lr': cfg['local']['lr']*2}]
+                        # param_group += [{'params': v, 'lr': cfg['local']['lr']*1}]
+                        v.requires_grad = False
                     else:
                         v.requires_grad = False
 
@@ -1293,43 +1308,46 @@ class Client:
                     # print(k)
                     param_group += [{'params': v, 'lr': cfg['local']['lr']}]
                 for k, v in model.class_layer.named_parameters():
-                    v.requires_grad = False
+                    # v.requires_grad = False
+                    param_group += [{'params': v, 'lr': cfg['local']['lr']}]
 
-                optimizer = make_optimizer(param_group, 'local')
-                optimizer = op_copy(optimizer)
+                optimizer_ = make_optimizer(param_group, 'local')
+                optimizer = op_copy(optimizer_)
 
-            # elif cfg['model_name']=='resnet9':
-            #     cfg['local']['lr'] = lr
-            #     # print(model)
-            #     param_group = []
-            #     for k,v in model.named_parameters():
-            #         # print(k)
-            #         if 'n1' in k or 'n2' in k or 'n4' in k or 'bn' in k:
-            #             # print(k)
-            #             param_group += [{'params': v, 'lr': cfg['local']['lr']*0.1}]
-            #         elif 'feat_embed_layer' in k:
-            #             print(k)
-            #             # v.requires_grad = False
-            #             param_group += [{'params': v, 'lr': cfg['local']['lr']}]
-            #         else :
-            #             print('grad false',k)
-            #             v.requires_grad = False
-            #     # for k, v in model.feat_embed_layer.named_parameters():
-            #     #     # print(k)
-            #     #     if 'n1' not in k or 'n2' not in k or 'n4' not in k or 'bn' not in k:
-            #     #         print(k)
-            #     #         param_group += [{'params': v, 'lr': cfg['local']['lr']}]
+            # # elif cfg['model_name']=='resnet9':
+            # #     cfg['local']['lr'] = lr
+            # #     # print(model)
+            # #     param_group = []
+            # #     for k,v in model.named_parameters():
+            # #         # print(k)
+            # #         if 'n1' in k or 'n2' in k or 'n4' in k or 'bn' in k:
+            # #             # print(k)
+            # #             param_group += [{'params': v, 'lr': cfg['local']['lr']*0.1}]
+            # #         elif 'feat_embed_layer' in k:
+            # #             print(k)
+            # #             # v.requires_grad = False
+            # #             param_group += [{'params': v, 'lr': cfg['local']['lr']}]
+            # #         else :
+            # #             print('grad false',k)
+            # #             v.requires_grad = False
+            # #     # for k, v in model.feat_embed_layer.named_parameters():
+            # #     #     # print(k)
+            # #     #     if 'n1' not in k or 'n2' not in k or 'n4' not in k or 'bn' not in k:
+            # #     #         print(k)
+            # #     #         param_group += [{'params': v, 'lr': cfg['local']['lr']}]
 
-            #     # for k, v in model.class_layer.named_parameters():
-            #     #     v.requires_grad = False
-            #     optimizer = make_optimizer(param_group, 'local')
-            #     optimizer = op_copy(optimizer)
-                # exit()
+            # #     # for k, v in model.class_layer.named_parameters():
+            # #     #     v.requires_grad = False
+            # #     optimizer = make_optimizer(param_group, 'local')
+            # #     optimizer = op_copy(optimizer)
+            #     # exit()
             else:
                 # print('not freezing')
                 optimizer = make_optimizer(model.parameters(), 'local')
                 optimizer.load_state_dict(self.optimizer_state_dict)
             # print(model)
+            # optimizer = make_optimizer(model.parameters(), 'local')
+            # optimizer.load_state_dict(self.optimizer_state_dict)
             model.train(True)
             # if cfg['world_size']==1:
             #     model.projection.requires_grad_(False)
@@ -1412,8 +1430,10 @@ class Client:
                 #     # print(output.keys())
                     output = {}
                     # print(self.cent)
+                    # print(self.cent,self.avg_cent)
                     loss,cent = bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,self.cent,self.avg_cent)
                     self.cent = cent
+                    # print(self.cent)
                     output['loss'] = loss
                     # output['loss'] = output['loss'].mean() if cfg['world_size'] > 1 else output['loss']
                     # output['loss'].backward()
@@ -1532,7 +1552,18 @@ def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg_
     with torch.no_grad():
         model.eval()
         # print("update psd label bank!")
-        glob_multi_feat_cent, all_psd_label = init_multi_cent_psd_label(model,test_data_loader)
+        glob_multi_feat_cent, all_psd_label ,all_emd_feat= init_multi_cent_psd_label(model,test_data_loader)
+        # print(all_emd_feat.shape)
+        # print(type(all_emd_feat))
+        # print(all_emd_feat[0])
+      
+        mean_p = torch.mean(all_emd_feat.detach(),axis = 0)
+        std_p = torch.std(all_emd_feat.detach(),axis = 0)
+        epsi = 1e-8
+        kl_loss = torch.mean(-torch.log(std_p+epsi)+torch.square(std_p)+torch.square(mean_p)-0.5)
+        print(kl_loss)
+        # exit()
+
         # print(glob_multi_feat_cent.squeeze().shape)
         # print(all_psd_label.shape)
         # if epoch%2==0:
@@ -1620,12 +1651,20 @@ def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg_
         if cfg['avg_cent'] and avg_cent is not None:
             dist=0
             # print(avg_cent.shape,cent.shape)
-            for avg_ci,ci in zip(avg_cent.squeeze(),cent.squeeze()):
-                # print(avg_ci.shape,ci.shape)
-                # dist += np.sqrt(np.sum((avg_ci-ci)**2,axis=0))
-                dist+=torch.norm((avg_ci.detach().reshape(-1) - ci.detach().reshape(-1)),0.9)
-            loss += dist/avg_cent.shape[0]
+            # for avg_ci,ci in zip(avg_cent.squeeze(),cent.squeeze()):
+            #     # print(avg_ci.shape,ci.shape)
+            #     # dist += np.sqrt(np.sum((avg_ci-ci)**2,axis=0))
+            #     # dist+=torch.norm((avg_ci.detach().reshape(-1) - ci.detach().reshape(-1)),0.9)
+            #     dist+= torch.norm((avg_ci.detach().reshape(-1) - ci.detach().reshape(-1)), p=2)
+            # dist = torch.sum(cent.squeeze()-avg_cent.squeeze(),)
+            cent_loss = torch.nn.MSELoss()
+            loss+=cfg['gamma']*cent_loss(cent.squeeze(),avg_cent.squeeze())
+            # loss += cfg['gamma']*dist/avg_cent.shape[0]
 
+            # print(loss)
+        if cfg['kl'] == 1:
+            loss+=kl_loss
+            
         optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
@@ -1635,7 +1674,7 @@ def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg_
             glob_multi_feat_cent = EMA_update_multi_feat_cent_with_feat_simi(glob_multi_feat_cent, embed_feat, decay=0.9999)
         # output = model(input)
         # print(output.keys())
-        cent = glob_multi_feat_cent
+        # cent = glob_multi_feat_cent
     train_loss = np.mean(loss_stack)
 
     return train_loss,cent

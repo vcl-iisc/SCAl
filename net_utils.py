@@ -59,6 +59,7 @@ def init_multi_cent_psd_label(model, dataloader, flag=False, flag_NRC=False, con
     # print(cls_out_stack)
     
     all_emd_feat = torch.cat(emd_feat_stack, dim=0)
+    emd_feat_out_ = all_emd_feat
     all_emd_feat = all_emd_feat / torch.norm(all_emd_feat, p=2, dim=1, keepdim=True)
     # print('emb fet')
     # print(all_emd_feat.shape)
@@ -141,7 +142,7 @@ def init_multi_cent_psd_label(model, dataloader, flag=False, flag_NRC=False, con
         if confu_mat_flag:
             return feat_multi_cent, all_psd_label, psd_confu_mat
         else:
-            return feat_multi_cent, all_psd_label
+            return feat_multi_cent, all_psd_label, emd_feat_out_
 
 
 def init_psd_label_shot_icml(args, model, dataloader):
