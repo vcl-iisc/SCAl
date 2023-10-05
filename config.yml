@@ -50,10 +50,13 @@ embed_feat_dim : 256
 tde : 5
 pre_trained : 1
 gamma : 0.1
-decay : 0.99
+decay : 0.9
 par : 0
 tau : 0.5
 kl : 0
+kl_weight : 0.1
+new_lr : 0
+unsup_mode : 'bmd'
 # SYN32 dataset
 # Max limit for total dataset size
 syn_max_train: 50000

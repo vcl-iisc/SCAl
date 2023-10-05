@@ -168,7 +168,7 @@ def process_control():
         cfg['server']['num_epochs'] = int(np.ceil(float(cfg['local_epoch'][1])))
         cfg['client'] = {}
         cfg['client']['shuffle'] = {'train': True, 'test': False}
-        cfg['client']['batch_size'] = {'train': 250, 'test': 50}
+        cfg['client']['batch_size'] = {'train': 50, 'test': 50}
         cfg['client']['num_epochs'] = int(np.ceil(float(cfg['local_epoch'][0])))
         cfg['local'] = {}
         cfg['local']['optimizer_name'] = 'SGD'
@@ -177,7 +177,7 @@ def process_control():
         cfg['local']['weight_decay'] = 5e-4
         cfg['local']['nesterov'] = True
         cfg['global'] = {}
-        cfg['global']['batch_size'] = {'train': 250, 'test': 50}
+        cfg['global']['batch_size'] = {'train': 50, 'test': 50}
         cfg['global']['shuffle'] = {'train': True, 'test': False}
         cfg['global']['num_epochs'] = 150
         cfg['global']['optimizer_name'] = 'SGD'
@@ -247,7 +247,7 @@ class Stats(object):
 
 
 def make_optimizer(parameters, tag):
-    print(cfg[tag]['lr'])
+    # print(cfg[tag]['lr'])
     if cfg[tag]['optimizer_name'] == 'SGD':
         optimizer = optim.SGD(parameters, lr=cfg[tag]['lr'], momentum=cfg[tag]['momentum'],
                               weight_decay=cfg[tag]['weight_decay'], nesterov=cfg[tag]['nesterov'])

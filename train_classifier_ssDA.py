@@ -182,10 +182,10 @@ def runExperiment():
     #     metric = Metric({'train': ['Loss', 'Accuracy'], 'test': ['Loss', 'Accuracy']})
     # print(metric.metric_name['train'])
     if cfg['resume_mode'] == 1:
-        result = resume_DA(cfg['model_tag'])
+        # result = resume_DA(cfg['model_tag'])
         # result = resume_DA(cfg['model_tag'],load_tag='best')
-        # tag_  = '0_dslr_to_amazon_webcam_resnet50_02'
-        # result = resume_DA(tag_,'checkpoint')
+        tag_  = '0_dslr_to_amazon_webcam_resnet50_02'
+        result = resume_DA(tag_,'checkpoint')
         # import pickle
         # path = "/home/sampathkoti/Downloads/R-50-GN.pkl"
         # # m = pickle.load(open(path, 'rb'))
@@ -203,8 +203,10 @@ def runExperiment():
             supervised_clients = result['supervised_clients']
             optimizer.load_state_dict(result['optimizer_state_dict'])
             scheduler.load_state_dict(result['scheduler_state_dict'])
-            logger = result['logger']
-            # logger = make_logger(os.path.join('output', 'runs', 'train_{}'.format(cfg['model_tag'])))
+            if cfg['new_lr'] == 1:
+                optimizer.param_groups[0]['lr']=cfg['var_lr']
+            # logger = result['logger']
+            logger = make_logger(os.path.join('output', 'runs', 'train_{}'.format(cfg['model_tag'])))
             # cfg['loss_mode'] = 'alt-fix'
         else:
             server = make_server(model)
@@ -556,7 +558,7 @@ def train_client(client_dataset_sup, client_dataset_unsup, server, client, super
         if client[m].supervised ==  True:
             dataset_m = separate_dataset_DA(client_dataset_sup, client[m].data_split['train'],cfg['data_name'])
         elif client[m].supervised ==  False:
-            # print('entered false')
+            #print('entered false')
             dataset_m = separate_dataset_DA(client_dataset_unsup, client[m].data_split['train'],cfg['data_name_unsup'])
         if 'batch' not in cfg['loss_mode'] and 'frgd' not in cfg['loss_mode'] and 'fmatch' not in cfg['loss_mode']:
             # cfg['pred'] = True
@@ -676,7 +678,11 @@ def train_client_multi(client_dataset_sup, client_dataset_unsup, server, client,
             domains.append(client[client_id[i]].domain)
 
         else : # or epoch % 2 == 0:# or epoch >270:
-            cfg['loss_mode'] = 'bmd'
+            if cfg['unsup_mode'] =='bmd':
+                cfg['loss_mode'] = 'bmd'
+            elif cfg['unsup_mode'] == 'fix-mix':
+                print('changing local mode to fix-mix')
+                cfg['loss_mode'] = 'fix-mix'
             domains=[]
             # cfg['loss_mode'] = 'fix-mix'
             print(cfg['loss_mode'])
@@ -712,7 +718,7 @@ def train_client_multi(client_dataset_sup, client_dataset_unsup, server, client,
             # print(domain_)
             dataset_m = separate_dataset_DA(client_dataset_sup, client[m].data_split['train'],cfg['data_name'])
         elif client[m].supervised ==  False:
-            print('entered false')
+            print('unsupervised training in progess')
             domain_id = client[m].domain_id
             # print(client_dataset_unsup.keys())
 

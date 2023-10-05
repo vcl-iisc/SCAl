@@ -638,7 +638,8 @@ class Client:
                     model = eval('models.{}()'.format(cfg['model_name']))
                     model = torch.nn.DataParallel(model,device_ids = [0, 1])
                     model.to(cfg["device"])
-                model.load_state_dict(self.model_state_dict,strict=False)
+                # model.load_state_dict(self.model_state_dict,strict=False)
+                model.load_state_dict(self.model_state_dict)
                 model.train(False)
                 cfg['pred'] = True
                 output = []
@@ -1185,7 +1186,8 @@ class Client:
             ci_data_loader = make_data_loader({'train':CI_dataset},'client')['train']
             # print(ci_data_loader)
             model = eval('models.{}().to(cfg["device"])'.format(cfg['model_name']))
-            model.load_state_dict(self.model_state_dict, strict=False)
+            # model.load_state_dict(self.model_state_dict, strict=False)
+            model.load_state_dict(self.model_state_dict)
             self.optimizer_state_dict['param_groups'][0]['lr'] = lr
             optimizer = make_optimizer(model.parameters(), 'local')
             optimizer.load_state_dict(self.optimizer_state_dict)
@@ -1289,6 +1291,7 @@ class Client:
             # model.load_state_dict(self.model_state_dict, strict=False)
             model.load_state_dict(self.model_state_dict)
             self.optimizer_state_dict['param_groups'][0]['lr'] = lr
+            # self.optimizer_state_dict['param_groups'][0]['lr'] = 0.001
 
             if cfg['model_name'] == 'resnet50' and cfg['par'] == 1:
                 print('freezing')
@@ -1449,6 +1452,7 @@ class Client:
             fix_data_loader = make_data_loader({'train': fix_dataset}, 'client')['train']
             mix_data_loader = make_data_loader({'train': mix_dataset}, 'client')['train']
             model = eval('models.{}().to(cfg["device"])'.format(cfg['model_name']))
+            # model.load_state_dict(self.model_state_dict, strict=False)
             model.load_state_dict(self.model_state_dict, strict=False)
             
             self.optimizer_state_dict['param_groups'][0]['lr'] = lr
@@ -1557,8 +1561,8 @@ def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg_
         # print(type(all_emd_feat))
         # print(all_emd_feat[0])
       
-        mean_p = torch.mean(all_emd_feat.detach(),axis = 0)
-        std_p = torch.std(all_emd_feat.detach(),axis = 0)
+        mean_p = torch.mean(all_emd_feat,axis = 0)
+        std_p = torch.std(all_emd_feat,axis = 0)
         epsi = 1e-8
         kl_loss = torch.mean(-torch.log(std_p+epsi)+torch.square(std_p)+torch.square(mean_p)-0.5)
         print(kl_loss)
@@ -1663,7 +1667,7 @@ def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg_
 
             # print(loss)
         if cfg['kl'] == 1:
-            loss+=kl_loss
+            loss+=cfg['kl_weight']*kl_loss
 
         optimizer.zero_grad()
         loss.backward()

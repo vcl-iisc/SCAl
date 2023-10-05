@@ -106,7 +106,7 @@ python train_centralDA_source.py --data_name office31 --data_name_unsup office31
 python train_centralDA_source.py --data_name office31 --data_name_unsup office31  --model_name resnet9 --d_mode new --device cuda:0 --var_lr 0.08 --test_10_crop True --scheduler_name  'ExponentialLR' --cycles 400 --domain_s  'amazon' --bt 50 --control_name "0001_sup-ft-fix_100_0.1_iid_5-5_0.07_1" --resume_mode 1
 
 
-python train_centralDA_source.py --data_name office31 --data_name_unsup office31  --model_name resnet9 --d_mode new --device cuda:1 --var_lr 0.09 --test_10_crop True --scheduler_name  'ExponentialLR' --cycles 334 --domain_s  'dslr' --bt 50 --control_name "0001_sup-ft-fix_100_0.1_iid_5-5_0.07_1" --resume_mode 1
+python train_centralDA_source.py --data_name office31 --data_name_unsup office31  --model_name resnet9 --d_mode new --device cuda:1 --var_lr 0.09 --test_10_crop True --scheduler_name  'ExponentialLR' --cycles 400 --domain_s  'dslr' --bt 50 --control_name "0001_sup-ft-fix_100_0.1_iid_5-5_0.07_1" --resume_mode 1
 python train_centralDA_source.py --data_name office31 --data_name_unsup office31  --model_name resnet9 --d_mode new --device cuda:1 --var_lr 0.09 --test_10_crop True --scheduler_name  'ExponentialLR' --cycles 330 --domain_s  'webcam' --bt 50 --control_name "0001_sup-ft-fix_100_0.1_iid_5-5_0.07_1" --resume_mode 1
 python train_centralDA_source.py --data_name office31 --data_name_unsup office31  --model_name resnet9 --d_mode new --device cuda:1 --var_lr 0.09 --test_10_crop True --scheduler_name  'ExponentialLR' --cycles 400 --domain_s  'amazon' --bt 50 --control_name "0001_sup-ft-fix_100_0.1_iid_5-5_0.07_1" --resume_mode 1
 
@@ -117,3 +117,66 @@ python train_classifier_ssDA.py --domain_s 'amazon' --unsup_doms 'dslr-webcam'  
 
 python train_centralDA_source.py --data_name office31 --data_name_unsup office31  --model_name SFDA --d_mode new --device cuda:0 --var_lr 0.01 --test_10_crop True --scheduler_name  'ExponentialLR' --cycles 350 --domain_u  'webcam' --domain_s dslr --bt 64 --control_name "0001_sup-ft-fix_100_0.1_iid_5-5_0.07_1" --resume_mode 1
 python train_centralDA_target.py --data_name office31 --data_name_unsup office31  --model_name SFDA --d_mode new --device cuda:1 --var_lr 0.09 --test_10_crop True --scheduler_name  'ExponentialLR' --cycles 334 --domain_u  'amazon' --domain_s dslr --bt 50 --control_name "0001_sup-ft-fix_100_0.1_iid_5-5_0.07_1" --resume_mode 1
+
+
+
+
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon'  --model_name resnet50 --d_mode new --device cuda:1 --var_lr 0.01  --scheduler_name  'ExponentialLR' --cycles 400  --switch_epoch_pred 50 --control_name "1_sup-ft-fix_25_0.2_iid_5-5_0.07_1" --resume_mode 1  
+
+
+
+#cluster loss
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:1 --var_lr 0.001  --scheduler_name  'ExponentialLR' --cycles 325  --switch_epoch_pred 75  --control_name "001_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1 --avg_cent 1 --gamma 0.1
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:1 --var_lr 0.001  --scheduler_name  'ExponentialLR' --cycles 325  --switch_epoch_pred 75  --control_name "002_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1 --avg_cent 1 --gamma 0.2
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:1 --var_lr 0.001  --scheduler_name  'ExponentialLR' --cycles 325  --switch_epoch_pred 75  --control_name "003_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1 --avg_cent 1 --gamma 0.3
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:1 --var_lr 0.001  --scheduler_name  'ExponentialLR' --cycles 325  --switch_epoch_pred 75  --control_name "004_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1 --avg_cent 1 --gamma 0.4
+
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:0 --var_lr 0.001  --scheduler_name  'ExponentialLR' --cycles 325  --switch_epoch_pred 75  --control_name "005_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1 --avg_cent 1 --gamma 0.5
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:0 --var_lr 0.001  --scheduler_name  'ExponentialLR' --cycles 325  --switch_epoch_pred 75  --control_name "006_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1 --avg_cent 1 --gamma 0.6
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:0 --var_lr 0.001  --scheduler_name  'ExponentialLR' --cycles 325  --switch_epoch_pred 75  --control_name "007_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1 --avg_cent 1 --gamma 0.7
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:0 --var_lr 0.001  --scheduler_name  'ExponentialLR' --cycles 325  --switch_epoch_pred 75  --control_name "008_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1 --avg_cent 1 --gamma 0.8
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:0 --var_lr 0.001  --scheduler_name  'ExponentialLR' --cycles 325  --switch_epoch_pred 75  --control_name "009_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1 --avg_cent 1 --gamma 0.9
+
+
+
+runs
+
+
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:1 --var_lr 0.001  --scheduler_name  'ExponentialLR' --cycles 225  --switch_epoch_pred 75  --control_name "005_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1  --adapt_wt 1 --tau 0.5
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:1 --var_lr 0.001  --scheduler_name  'ExponentialLR' --cycles 225  --switch_epoch_pred 75  --control_name "0010_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1  --adapt_wt 1 --tau 1
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:1 --var_lr 0.001  --scheduler_name  'ExponentialLR' --cycles 275 --switch_epoch_pred 75  --control_name "001_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1 --adapt_wt 1 --tau 0.1
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:0 --var_lr 0.001  --scheduler_name  'CosineAnnealingLR' --cycles 225  --switch_epoch_pred 75  --control_name "0003_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1 --avg_cent 1 --gamma 0.3 
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:0 --var_lr 0.001  --scheduler_name  'CosineAnnealingLR' --cycles 225  --switch_epoch_pred 75  --control_name "00010_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1 --avg_cent 1 --gamma 1 
+
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:1 --var_lr 0.001  --scheduler_name  'ExponentialLR' --cycles 225  --switch_epoch_pred 75  --control_name "00501_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1  --avg_cent 1 --gamma 1  --adapt_wt 1 --tau 0.5
+
+
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:1 --var_lr 0.001  --scheduler_name  'ExponentialLR' --cycles 225  --switch_epoch_pred 75  --control_name "00101_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1  --avg_cent 1 --gamma 1  --adapt_wt 1 --tau 1
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:1 --var_lr 0.001  --scheduler_name  'ExponentialLR' --cycles 275 --switch_epoch_pred 75  --control_name "001001_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1 --avg_cent 1 --gamma 1  --adapt_wt 1 --tau 0.1
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:0 --var_lr 0.001  --scheduler_name  'CosineAnnealingLR' --cycles 225  --switch_epoch_pred 75  --control_name "00011_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1 --avg_cent 1 --gamma 1 --tde 10
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:0 --var_lr 0.001  --scheduler_name  'CosineAnnealingLR' --cycles 225  --switch_epoch_pred 75  --control_name "00012_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1 --avg_cent 1 --gamma 1  --tde 20 
+
+KL_experiments
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:1 --var_lr 0.001  --scheduler_name  'ExponentialLR' --cycles 225  --switch_epoch_pred 75  --control_name "001_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1  --avg_cent 1 --gamma 0.3  --kl 1 --kl_weight 0.1
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:1 --var_lr 0.001  --scheduler_name  'ExponentialLR' --cycles 225 --switch_epoch_pred 75  --control_name "002_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1 --avg_cent 1 --gamma 0.3  --kl 1 --kl_weight 0.2 
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:1 --var_lr 0.001  --scheduler_name  'ExponentialLR' --cycles 225  --switch_epoch_pred 75  --control_name "003_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1  --avg_cent 1 --gamma 0.3  --kl 1 --kl_weight 0.3
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:1 --var_lr 0.001  --scheduler_name  'ExponentialLR' --cycles 225 --switch_epoch_pred 75  --control_name "004_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1 --avg_cent 1 --gamma 0.3  --kl 1 --kl_weight 0.4
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:1 --var_lr 0.001  --scheduler_name  'ExponentialLR' --cycles 225  --switch_epoch_pred 75  --control_name "005_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1  --avg_cent 1 --gamma 0.3  --kl 1 --kl_weight 0.5
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:1 --var_lr 0.001  --scheduler_name  'ExponentialLR' --cycles 225 --switch_epoch_pred 75  --control_name "006_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1 --avg_cent 1 --gamma 0.3  --kl 1 --kl_weight 0.6 
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:0 --var_lr 0.001  --scheduler_name  'ExponentialLR' --cycles 225 --switch_epoch_pred 75  --control_name "007_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1 --avg_cent 1 --gamma 0.3  --kl 1 --kl_weight 0.7
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:0 --var_lr 0.001  --scheduler_name  'ExponentialLR' --cycles 225  --switch_epoch_pred 75  --control_name "008_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1  --avg_cent 1 --gamma 0.3  --kl 1 --kl_weight 0.8
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:0 --var_lr 0.001  --scheduler_name  'ExponentialLR' --cycles 225 --switch_epoch_pred 75  --control_name "009_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1 --avg_cent 1 --gamma 0.3  --kl 1 --kl_weight 0.9
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:0 --var_lr 0.001  --scheduler_name  'ExponentialLR' --cycles 225  --switch_epoch_pred 75  --control_name "010_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1  --avg_cent 1 --gamma 0.3  --kl 1 --kl_weight 1
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:0 --var_lr 0.001  --scheduler_name  'ExponentialLR' --cycles 225 --switch_epoch_pred 75  --control_name "006_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1 --avg_cent 1 --gamma 0.3  --kl 1 --kl_weight 0.6 
+
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam' --model_name resnet50 --d_mode new --device cuda:1 --var_lr 0.001 --scheduler_name 'ExponentialLR' --cycles 225 --switch_epoch_pred 75 --control_name "0001_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1 --avg_cent 1 --gamma 2
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam' --model_name resnet50 --d_mode new --device cuda:1 --var_lr 0.001 --scheduler_name 'ExponentialLR' --cycles 225 --switch_epoch_pred 75 --control_name "0003_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1 --avg_cent 1 --gamma 2
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam' --model_name resnet50 --d_mode new --device cuda:1 --var_lr 0.001 --scheduler_name 'ExponentialLR' --cycles 225 --switch_epoch_pred 75 --control_name "0004_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1 --avg_cent 1 --gamma 1
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam' --model_name resnet50 --d_mode new --device cuda:1 --var_lr 0.01 --scheduler_name 'ExponentialLR' --cycles 225 --switch_epoch_pred 75 --control_name "0005_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1 --avg_cent 1 --gamma 2
+python train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam' --model_name resnet50 --d_mode new --device cuda:1 --var_lr 0.01 --scheduler_name 'ExponentialLR' --cycles 225 --switch_epoch_pred 75 --control_name "0005_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1 --avg_cent 1 --gamma 2
+ ython train_classifier_ssDA.py --domain_s 'dslr' --unsup_doms 'amazon-webcam'  --model_name resnet50 --d_mode new --device cuda:0 --var_lr 0.001  --scheduler_name  'ExponentialLR' --cycles 225 --switch_epoch_pred 75  --control_name "0020_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1 --avg_cent 1 --gamma 0.3  --kl 1 --kl_weight 2
+ 
+
+
+
+
