@@ -1489,6 +1489,8 @@ class Client:
                              'mix_data': mix_input['augs'], 'mix_target': mix_input['target'],'id':fix_input['id']}
                     input = collate(input)
                     input_size = input['data'].size(0)
+                    if input_size == 1:
+                        break
                     # print(input['mix_data'].shape)
                     input['lam'] = self.beta.sample()[0]
                     input['mix_data'] = (input['lam'] * input['data'] + (1 - input['lam']) * input['mix_data']).detach()

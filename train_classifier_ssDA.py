@@ -683,6 +683,8 @@ def train_client_multi(client_dataset_sup, client_dataset_unsup, server, client,
             elif cfg['unsup_mode'] == 'fix-mix':
                 print('changing local mode to fix-mix')
                 cfg['loss_mode'] = 'fix-mix'
+            else:
+                print('Error:Undefined mode')
             domains=[]
             # cfg['loss_mode'] = 'fix-mix'
             print(cfg['loss_mode'])
