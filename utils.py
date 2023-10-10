@@ -164,11 +164,11 @@ def process_control():
         if cfg['num_supervised'] > 1000:
             cfg['server']['batch_size'] = {'train': 250, 'test': 250}
         else:
-            cfg['server']['batch_size'] = {'train': 50, 'test': 250}
+            cfg['server']['batch_size'] = {'train': 25, 'test': 50}
         cfg['server']['num_epochs'] = int(np.ceil(float(cfg['local_epoch'][1])))
         cfg['client'] = {}
         cfg['client']['shuffle'] = {'train': True, 'test': False}
-        cfg['client']['batch_size'] = {'train': 50, 'test': 50}
+        cfg['client']['batch_size'] = {'train': 25, 'test': 50}
         cfg['client']['num_epochs'] = int(np.ceil(float(cfg['local_epoch'][0])))
         cfg['local'] = {}
         cfg['local']['optimizer_name'] = 'SGD'
@@ -177,7 +177,7 @@ def process_control():
         cfg['local']['weight_decay'] = 5e-4
         cfg['local']['nesterov'] = True
         cfg['global'] = {}
-        cfg['global']['batch_size'] = {'train': 50, 'test': 50}
+        cfg['global']['batch_size'] = {'train': 25, 'test': 25}
         cfg['global']['shuffle'] = {'train': True, 'test': False}
         cfg['global']['num_epochs'] = 150
         cfg['global']['optimizer_name'] = 'SGD'

@@ -55,6 +55,14 @@ def runExperiment():
     cfg['seed'] = int(cfg['model_tag'].split('_')[0])
     torch.manual_seed(cfg['seed'])
     torch.cuda.manual_seed(cfg['seed'])
+    seed_val =  cfg['seed']
+    torch.manual_seed(seed_val)
+    torch.cuda.manual_seed_all(seed_val)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    np.random.seed(seed_val)
+    random.seed(seed_val)
+    torch.cuda.empty_cache()
     # print(cfg['gm'])
     #server_dataset = fetch_dataset(cfg['data_name'])
     client_dataset_sup = fetch_dataset(cfg['data_name'],domain=cfg['domain_s'])
@@ -185,6 +193,7 @@ def runExperiment():
         result = resume_DA(cfg['model_tag'])
         # result = resume_DA(cfg['model_tag'],load_tag='best')
         # tag_  = '0_dslr_to_amazon_webcam_resnet50_02'
+        # tag_ = '0_dslr_to_amazon_resnet50_01'
         # result = resume_DA(tag_,'checkpoint')
         # import pickle
         # path = "/home/sampathkoti/Downloads/R-50-GN.pkl"
@@ -234,6 +243,7 @@ def runExperiment():
                 # cfg['loss_mode'] = 'fix-mix'
         # train_client(client_dataset_sup['train'], client_dataset_unsup['train'], server, client, supervised_clients, optimizer, metric, logger, epoch,mode)
         train_client_multi(client_dataset_sup['train'], client_dataset_unsup, server, client, supervised_clients, optimizer, metric, logger, epoch,mode)
+        # train_client_multi(client_dataset_sup['train'], client_dataset_unsup, server, client, supervised_clients, optimizer, metric, logger, epoch,mode,scheduler)
         # if 'ft' in cfg and cfg['ft'] == 0:
         #     train_server(server_dataset['train'], server, optimizer, metric, logger, epoch)
         #     logger.reset()
@@ -258,6 +268,36 @@ def runExperiment():
         for domain_id,data_loader_unsup_ in data_loader_unsup.items():
             domain = cfg['unsup_list'][domain_id]
             test_DA(data_loader_unsup_['test'], test_model, metric, logger, epoch,domain=domain)
+        # print(logger.mean)
+        avg_accuracy=0
+        avg_loss = 0 
+        count = 0
+        log_dict = logger.mean
+        # for j in logger.mean:
+        #     print(j,logger.mean[j])
+        # print(log_dict)
+        for k in log_dict:
+            # print(k)
+            if 'test_sup' not in k:
+                # print(k)
+                count+=1
+                if 'Accuracy' in k :
+                    avg_accuracy+=logger.mean[k]
+                elif 'Loss' in k :
+                    avg_loss+=logger.mean[k]
+        avg_accuracy,avg_loss = avg_accuracy/count,avg_loss/count
+        print(avg_accuracy,avg_loss)
+        eval_avg = {'Accuracy' : avg_accuracy,'Loss':avg_loss}
+        logger.safe(True)
+        tag = f'test_average_of_{count}_domains'
+        logger.append(eval_avg, tag)
+        info = {'info': ['Model: {}'.format(cfg['model_tag']), 'Test Epoch: {}({:.0f}%)'.format(epoch, 100.)]}
+        logger.append(info, tag, mean=False)
+        # print(logger.mean)
+        print(logger.write(tag, metric.metric_name['test']))
+        logger.safe(False)
+        # print(logger.mean[f'{tag}/Accuracy'])
+        # print(logger.write(tag, metric.metric_name['test'])
         # result = {'cfg': cfg, 'epoch': epoch + 1, 'server': server, 'client': client,
         #           'optimizer_state_dict': optimizer.state_dict(),
         #           'scheduler_state_dict': scheduler.state_dict(),
@@ -605,16 +645,19 @@ def train_client_multi(client_dataset_sup, client_dataset_unsup, server, client,
         if epoch <= cfg['switch_epoch']:
             num_active_clients = int(np.ceil(cfg['active_rate'] * cfg['num_clients']))
             ACL=set(torch.arange(cfg['num_clients']).tolist())
-            ACL = ACL-set(supervised_clients)
+            ACL = list(ACL-set(supervised_clients))
             # print(ACL)
             # ran_CL = set(torch.randperm(cfg['num_clients']).tolist())
             # ran_CL = [ran_CL-set(supervised_clients)]
-            client_id = random.sample(ACL,num_active_clients)
+            # client_id = random.sample(ACL,num_active_clients)
+            client_id = np.random.choice(ACL,num_active_clients)
             # client_id = torch.arange(cfg['num_clients'])[torch.randperm(cfg['num_clients'])[:num_active_clients]].tolist()
             for i in range(num_active_clients):
                 client[client_id[i]].active = True
             server.distribute(client,client_dataset_unsup)
         else:
+            
+        
             num_active_clients = len(supervised_clients)
             client_id = supervised_clients
             for i in range(num_active_clients):
@@ -647,11 +690,12 @@ def train_client_multi(client_dataset_sup, client_dataset_unsup, server, client,
             cfg['loss_mode'] = 'fix-mix'
             num_active_clients = int(np.ceil(cfg['active_rate'] * cfg['num_clients']))
             ACL=set(torch.arange(cfg['num_clients']).tolist())
-            ACL = ACL-set(supervised_clients)
+            ACL = list(ACL-set(supervised_clients))
             # print(ACL)
             # ran_CL = set(torch.randperm(cfg['num_clients']).tolist())
             # ran_CL = [ran_CL-set(supervised_clients)]
-            client_id = random.sample(ACL,num_active_clients)
+            # client_id = random.sample(ACL,num_active_clients)
+            client_id = np.random.choice(ACL,num_active_clients)
             # print(client_id)
             # client_id = torch.arange(cfg['num_clients'])[torch.randperm(cfg['num_clients'])[:num_active_clients]].tolist()
             for i in range(num_active_clients):
@@ -689,12 +733,29 @@ def train_client_multi(client_dataset_sup, client_dataset_unsup, server, client,
             # cfg['loss_mode'] = 'fix-mix'
             print(cfg['loss_mode'])
             num_active_clients = int(np.ceil(cfg['active_rate'] * cfg['num_clients']))
+            # inc_seed = 0
+            # while(True):
+            #                 # Fix randomness in client selection
+            #                 np.random.seed(epoch + inc_seed)
+            #                 act_list    = np.random.uniform(size=cfg['num_clients'])
+            #                 print(act_list)
+            #                 act_clients = act_list <= cfg['active_rate']
+            #                 selected_clnts = np.sort(np.where(act_clients)[0])
+            #                 inc_seed += 1
+            #                 print(selected_clnts)
+            #                 if len(selected_clnts) != 0:
+            #                     break
+        
             ACL=set(torch.arange(cfg['num_clients']).tolist())
-            ACL = ACL-set(supervised_clients)
+            ACL = list(ACL-set(supervised_clients))
             # print(ACL)
             # ran_CL = set(torch.randperm(cfg['num_clients']).tolist())
             # ran_CL = [ran_CL-set(supervised_clients)]
-            client_id = random.sample(ACL,num_active_clients)
+            # client_id = list(set(selected_clnts)-set(supervised_clients))
+            # print(client_id)
+            # exit()
+            client_id = np.random.choice(np.array(ACL),num_active_clients)
+            # client_id = random.sample(ACL,num_active_clients)
             # print(client_id)
             # client_id = torch.arange(cfg['num_clients'])[torch.randperm(cfg['num_clients'])[:num_active_clients]].tolist()
             for i in range(num_active_clients):
@@ -871,7 +932,9 @@ def test_DA(data_loader, model, metric, logger, epoch,sup=False,domain=None):
                     logger.append(evaluation, tag, input_size)
                 info = {'info': ['Model: {}'.format(cfg['model_tag']), 'Test Epoch: {}({:.0f}%)'.format(epoch, 100.)]}
                 logger.append(info, tag, mean=False)
+                # print(logger.mean[f'{tag}/Accuracy'])
                 print(logger.write(tag, metric.metric_name['test']))
+
                 # print(metric.metric_name['test'])
                 # if sup:
                 #     logger.append(info, 'test_sup', mean=False)

@@ -1293,28 +1293,29 @@ class Client:
             self.optimizer_state_dict['param_groups'][0]['lr'] = lr
             # self.optimizer_state_dict['param_groups'][0]['lr'] = 0.001
 
-            if cfg['model_name'] == 'resnet50' and cfg['par'] == 1:
+            if cfg['model_name'] == 'resnet50' or cfg['model_name'] == 'resnet9' and cfg['par'] == 1:
                 print('freezing')
                 cfg['local']['lr'] = lr
                 # cfg['local']['lr'] = 0.001
-                param_group = []
+                param_group_ = []
                 for k, v in model.backbone_layer.named_parameters():
                     # print(k)
                     if "bn" in k:
                         # param_group += [{'params': v, 'lr': cfg['local']['lr']*2}]
-                        # param_group += [{'params': v, 'lr': cfg['local']['lr']*1}]
-                        v.requires_grad = False
+                        param_group_ += [{'params': v, 'lr': cfg['local']['lr']*0.1}]
+                        # v.requires_grad = False
+                        # print(k)
                     else:
                         v.requires_grad = False
 
                 for k, v in model.feat_embed_layer.named_parameters():
                     # print(k)
-                    param_group += [{'params': v, 'lr': cfg['local']['lr']}]
+                    param_group_ += [{'params': v, 'lr': cfg['local']['lr']}]
                 for k, v in model.class_layer.named_parameters():
-                    # v.requires_grad = False
-                    param_group += [{'params': v, 'lr': cfg['local']['lr']}]
+                    v.requires_grad = False
+                    # param_group += [{'params': v, 'lr': cfg['local']['lr']}]
 
-                optimizer_ = make_optimizer(param_group, 'local')
+                optimizer_ = make_optimizer(param_group_, 'local')
                 optimizer = op_copy(optimizer_)
 
             # # elif cfg['model_name']=='resnet9':
