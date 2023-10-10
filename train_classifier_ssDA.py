@@ -120,7 +120,7 @@ def runExperiment():
         model = eval('models.{}()'.format(cfg['model_name']))
         model = torch.nn.DataParallel(model,device_ids = [0, 1])
         model.to(cfg["device"])
-    # print(model)
+    print(model)
     cfg['local']['lr'] = cfg['var_lr']
     optimizer = make_optimizer(model.parameters(), 'local')
     scheduler = make_scheduler(optimizer, 'global')

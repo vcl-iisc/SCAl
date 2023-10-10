@@ -366,9 +366,10 @@ def resnet50(momentum=None, track=True):
     # # model = ResNet(data_shape, hidden_size, Block, [1, 1, 1, 1], target_size)
     model = SFDA()
     model.backbone_arch = 'resnet50'
-    # model = convert_layers(model, torch.nn.BatchNorm2d, torch.nn.GroupNorm, num_groups = 2,convert_weights=False)
-    # model = convert_layers(model, torch.nn.BatchNorm1d, torch.nn.GroupNorm, num_groups = 2,convert_weights=False)
+    model = convert_layers(model, torch.nn.BatchNorm2d, torch.nn.GroupNorm, num_groups = 64,convert_weights=False)
+    model = convert_layers(model, torch.nn.BatchNorm1d, torch.nn.GroupNorm, num_groups = 64,convert_weights=False)
     if cfg['pre_trained']:
+        print('loading pretrained model')
         model = get_pretrained_GN(model)
     # model.apply(init_param)
     # model.apply(lambda m: make_batchnorm(m, momentum=momentum, track_running_stats=track))
@@ -376,6 +377,8 @@ def resnet50(momentum=None, track=True):
 def get_pretrained_GN(model):
     import pickle
     path = "/home/sampathkoti/Downloads/R-50-GN.pkl"
+    
+    # path = "/media/cds/DATA2/Yeswanth/SSFL/SemiFL/R-50-GN.pkl"
     with open(path, 'rb') as f:
         m=pickle.load(f,encoding="latin1")
     for k,v in model.state_dict().items():
@@ -654,13 +657,18 @@ def get_pretrained_GN(model):
 
     return model
 def convert_layers(model, layer_type_old, layer_type_new, num_groups,convert_weights=False):
+    
     for name, module in reversed(model._modules.items()):
+        # print(name)
         if len(list(module.children())) > 0:
             # recurse
             model._modules[name] = convert_layers(module, layer_type_old, layer_type_new, convert_weights)
-
+        
         if type(module) == layer_type_old:
+            # print(layer_type_new,layer_type_old,name)
             layer_old = module
+            # print('converting layers')
+            # print()
             # layer_new = layer_type_new(module.num_features if num_groups is None else num_groups, module.num_features, module.eps, module.affine) 
             layer_new = layer_type_new(32, module.num_features, module.eps, module.affine) 
 
