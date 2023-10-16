@@ -3,7 +3,7 @@ import numpy as np
 import torch.nn as nn
 from torchvision import models
 from config import cfg
-from .utils import init_param, make_batchnorm, loss_fn ,info_nce_loss, SimCLR_Loss,elr_loss
+from .utils import init_param, make_batchnorm, loss_fn ,info_nce_loss, SimCLR_Loss,elr_loss, register_act_hooks
 from data import SimDataset 
 from net_utils import Entropy, CrossEntropyLabelSmooth
 def init_weights(m):
@@ -158,6 +158,9 @@ class SFDA(nn.Module):
     def __init__(self):
         
         super(SFDA, self).__init__()
+        ## Activation statistics ##
+        self.act_stats = {}
+
         self.backbone_arch = cfg['backbone_arch'] # resnet101
         self.embed_feat_dim = cfg['embed_feat_dim'] # 256
         self.class_num = cfg['target_size']          # 12 for VisDA
@@ -175,7 +178,6 @@ class SFDA(nn.Module):
         
         self.class_layer = Classifier(self.embed_feat_dim, class_num=self.class_num, type="wn")
         # self.class_layer = Classifier(self.backbone_feat_dim, class_num=self.class_num)
-
     
     def get_emd_feat(self, input_imgs):
         # input_imgs [B, 3, H, W]
@@ -373,7 +375,12 @@ def resnet50(momentum=None, track=True):
         model = get_pretrained_GN(model)
     # model.apply(init_param)
     # model.apply(lambda m: make_batchnorm(m, momentum=momentum, track_running_stats=track))
+    
+    ## Register forward hook ##
+    register_act_hooks(model, compute_mean_norm=cfg['compute_mean_norm'], compute_std_dev=cfg['compute_std_dev'])
+
     return model
+
 def get_pretrained_GN(model):
     import pickle
     path = "/home/sampathkoti/Downloads/R-50-GN.pkl"

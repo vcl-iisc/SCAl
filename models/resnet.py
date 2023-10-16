@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .utils import init_param, make_batchnorm, loss_fn ,info_nce_loss, SimCLR_Loss,elr_loss
+from .utils import init_param, make_batchnorm, loss_fn ,info_nce_loss, SimCLR_Loss,elr_loss, register_act_hooks
 from utils import to_device, make_optimizer, collate, to_device
 from data import SimDataset 
 # import data.info_nce_loss as info_nce_loss
@@ -140,6 +140,7 @@ class Classifier(nn.Module):
 class ResNet(nn.Module):
     def __init__(self, data_shape, hidden_size, block, num_blocks, target_size,sim_out=int(128)):
         super().__init__()
+        self.act_stats = {}
         self.in_planes = hidden_size[0]
         self.backbone_feat_dim = 512
         self.embed_feat_dim  = 256
@@ -399,6 +400,10 @@ def resnet9(momentum=None, track=True):
     model = ResNet(data_shape, hidden_size, Block, [1, 1, 1, 1], target_size)
     model.apply(init_param)
     model.apply(lambda m: make_batchnorm(m, momentum=momentum, track_running_stats=track))
+
+    ## Register forward hook ##
+    register_act_hooks(model, compute_mean_norm=True, compute_std_dev=False)
+
     return model
 
 

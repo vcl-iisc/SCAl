@@ -5,6 +5,28 @@ import models
 from utils import to_device, make_optimizer, collate, to_device
 import numpy as np
 from config import cfg
+import functools
+
+# Register forward hook
+def register_act_hooks(model, compute_mean_norm=False, compute_std_dev=False):
+    for name, module in model.named_modules():
+        if 'conv' in name or 'linear' in name:
+            module.register_forward_hook(lambda module, input, output: 
+                hook_fn(module, input, output, layer_name=name, model=model, 
+                compute_mean_norm=compute_mean_norm, compute_std_dev=compute_std_dev))
+
+## Hook function
+def hook_fn(module, input, output, layer_name, model, compute_mean_norm=False, compute_std_dev=False):
+    result = {}
+    if compute_mean_norm:
+        mean_norm = output.norm(p=2, dim=1).mean()
+        result['mean_norm'] = cfg['mean_norm_reg'] * mean_norm
+
+    if compute_std_dev:
+        std_dev = output.std()
+        result['std_dev'] = cfg['std_dev_reg'] * std_dev
+
+    model.act_stats[layer_name] = result
 
 def init_param(m):
     if isinstance(m, nn.Conv2d) and isinstance(m, models.DecConv2d):

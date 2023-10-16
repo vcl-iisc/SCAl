@@ -60,3 +60,8 @@ unsup_mode : 'bmd'
 # SYN32 dataset
 # Max limit for total dataset size
 syn_max_train: 50000
+# Activation-norm/std for each layer
+compute_mean_norm: True
+compute_std_dev: False
+mean_norm_reg: 0.01
+std_dev_reg: 0
