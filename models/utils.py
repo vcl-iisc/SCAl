@@ -19,11 +19,11 @@ def register_act_hooks(model, compute_mean_norm=False, compute_std_dev=False):
 def hook_fn(module, input, output, layer_name, model, compute_mean_norm=False, compute_std_dev=False):
     result = {}
     if compute_mean_norm:
-        mean_norm = output.norm(p=2, dim=1).mean()
+        mean_norm = F.relu(output.clone()).norm(p=2, dim=1).mean()
         result['mean_norm'] = cfg['mean_norm_reg'] * mean_norm
 
     if compute_std_dev:
-        std_dev = output.std()
+        std_dev = F.relu(output.clone()).std()
         result['std_dev'] = cfg['std_dev_reg'] * std_dev
 
     model.act_stats[layer_name] = result
