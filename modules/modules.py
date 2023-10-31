@@ -14,8 +14,8 @@ from utils import to_device, make_optimizer, collate, to_device
 from train_centralDA_target import op_copy
 from metrics import Accuracy
 from net_utils import set_random_seed
-from net_utils import init_multi_cent_psd_label
-from net_utils import EMA_update_multi_feat_cent_with_feat_simi
+from net_utils import init_multi_cent_psd_label,init_psd_label_shot_icml
+from net_utils import EMA_update_multi_feat_cent_with_feat_simi,get_final_centroids
 
 class Server:
     def __init__(self, model):
@@ -118,66 +118,7 @@ class Server:
             
             client[m].fix_model_state_dict = copy.deepcopy(model_state_dict)
         return
-    # def update(self, client):
-    #     if 'fmatch' not in cfg['loss_mode']:
-    #         with torch.no_grad():
-    #             valid_client = [client[i] for i in range(len(client)) if client[i].active]
-    #             if len(valid_client) > 0:
-    #                 # model = eval('models.{}()'.format(cfg['model_name']))
-    #                 if cfg['world_size']==1:
-    #                     model = eval('models.{}()'.format(cfg['model_name']))
-    #                 elif cfg['world_size']>1:
-    #                     cfg["device"] = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    #                     model = eval('models.{}()'.format(cfg['model_name']))
-    #                     model = torch.nn.DataParallel(model,device_ids = [0, 1])
-    #                     model.to(cfg["device"])
-    #                 # model.load_state_dict(self.model_state_dict)
-    #                 model.load_state_dict(self.model_state_dict)
-    #                 global_optimizer = make_optimizer(model.parameters(), 'global')
-    #                 global_optimizer.load_state_dict(self.global_optimizer_state_dict)
-    #                 global_optimizer.zero_grad()
-    #                 weight = torch.ones(len(valid_client))
-    #                 weight = weight / weight.sum()
-    #                 for k, v in model.named_parameters():
-    #                     # print(k)
-    #                     parameter_type = k.split('.')[-1]
-    #                     # print(f'{k} with parameter type {parameter_type}')
-    #                     if 'weight' in parameter_type or 'bias' in parameter_type:
-    #                         tmp_v = v.data.new_zeros(v.size())
-    #                         for m in range(len(valid_client)):
-    #                             if cfg['world_size']==1:
-    #                                 tmp_v += weight[m] * valid_client[m].model_state_dict[k]
-    #                             elif  cfg['world_size']>1:
-    #                                 tmp_v += weight[m] * valid_client[m].model_state_dict[k].to(cfg["device"])
-    #                         v.grad = (v.data - tmp_v).detach()
-    #                 # module = model.layer1[0].n1
-    #                 # print(list(module.named_buffers()))
-    #                 global_optimizer.step()
-    #                 self.global_optimizer_state_dict = save_optimizer_state_dict(global_optimizer.state_dict())
-    #                 self.model_state_dict = save_model_state_dict(model.state_dict())
-    #                 # self.model_state_dict = save_model_state_dict(model.module.state_dict() if cfg['world_size'] > 1 else model.state_dict())
-    #     elif 'fmatch' in cfg['loss_mode']:
-    #         with torch.no_grad():
-    #             valid_client = [client[i] for i in range(len(client)) if client[i].active]
-    #             if len(valid_client) > 0:
-    #                 model = eval('models.{}()'.format(cfg['model_name']))
-    #                 model.load_state_dict(self.model_state_dict)
-    #                 global_optimizer = make_optimizer(model.make_phi_parameters(), 'global')
-    #                 global_optimizer.load_state_dict(self.global_optimizer_state_dict)
-    #                 global_optimizer.zero_grad()
-    #                 weight = torch.ones(len(valid_client))
-    #                 weight = weight / weight.sum()
-    #                 for k, v in model.named_parameters():
-    #                     parameter_type = k.split('.')[-1]
-    #                     if 'weight' in parameter_type or 'bias' in parameter_type:
-    #                         tmp_v = v.data.new_zeros(v.size())
-    #                         for m in range(len(valid_client)):
-    #                             tmp_v += weight[m] * valid_client[m].model_state_dict[k]
-    #                         v.grad = (v.data - tmp_v).detach()
-    #                 global_optimizer.step()
-    #                 self.global_optimizer_state_dict = save_optimizer_state_dict(global_optimizer.state_dict())
-    #                 # self.model_state_dict = save_model_state_dict(model.state_dict())
-    #                 self.model_state_dict = save_model_state_dict(model.module.state_dict() if cfg['world_size'] > 1 else model.state_dict())
+    
     def update(self, client):
         if ('fmatch' not in cfg['loss_mode'] and cfg['adapt_wt'] == 0):
             with torch.no_grad():
@@ -216,62 +157,7 @@ class Server:
                                     tmp_v += weight[m] * valid_client[m].model_state_dict[k].to(cfg["device"])
                             v.grad = (v.data - tmp_v).detach()
 
-                    # for k, v in model.named_buffers():
-                    #     # print(k)
-                    #     parameter_type = k.split('.')[-1]
-                    #     # print(f'{k} with parameter type {parameter_type}')
-                    #     if 'running_mean' in parameter_type or 'running_mean' in parameter_type:
-                    #         # print(k)
-                    #         tmp_v = v.data.new_zeros(v.size())
-                    #         for m in range(len(valid_client)):
-                    #             if cfg['world_size']==1:
-                    #                 tmp_v += weight[m] * valid_client[m].model_state_dict[k]
-                    #             elif  cfg['world_size']>1:
-                    #                 tmp_v += weight[m] * valid_client[m].model_state_dict[k].to(cfg["device"])
-                    #         v.grad = (v.data - tmp_v).detach()
-                    #         v.data = v.data-1*v.grad
-                        # else :
-                        #     print(k)
-                        #     tmp_v = v.data.new_zeros(v.size())
-                        #     for m in range(len(valid_client)):
-                        #         if cfg['world_size']==1:
-                        #             tmp_v += valid_client[m].model_state_dict[k]
-                        #         elif  cfg['world_size']>1:
-                        #             tmp_v += valid_client[m].model_state_dict[k].to(cfg["device"])
-                        #     # print(tmp_v)
-                        #     v.data = (tmp_v//len(valid_client)).detach()
-
-
-                        # isBatchNorm = isinstance(v, torch.nn.BatchNorm2d)
-                        # parameter_type = k.split('.')[-1]
-                        # # print(f'{k} with parameter type {parameter_type}')
-                        # if 'weight' in parameter_type or 'bias' in parameter_type:
-                        #     tmp_v = v.data.new_zeros(v.size())
-                        #     for m in range(len(valid_client)):
-                        #         if cfg['world_size']==1:
-                        #             tmp_v += weight[m] * valid_client[m].model_state_dict[k]
-                        #         elif  cfg['world_size']>1:
-                        #             tmp_v += weight[m] * valid_client[m].model_state_dict[k].to(cfg["device"])
-                        #     v.grad = (v.data - tmp_v).detach()
-
-                        # elif isBatchNorm:
-                        #     print(k)
-                        #     # Accumulate BatchNorm parameters for averaging
-                        #     if bn_parameters[k] is None:
-                        #         bn_parameters[k] = weight[0] * valid_client[0].model_state_dict[k].clone()
-                        #     for m in range(1, len(valid_client)):
-                        #         bn_parameters[k] += weight[m] * valid_client[m].model_state_dict[k].clone()
-
-                    # module = model.layer1[0].n1
-                    # print(list(module.named_buffers()))
                     global_optimizer.step()
-
-                    # # Update the averaged batchnorm parameters back to the server model
-                    # for k, v in model.named_parameters():
-                    #     if isinstance(v, torch.nn.BatchNorm2d):
-                    #         # print(bn_parameters[k])
-
-                    #         v.data = bn_parameters[k]
 
                     self.global_optimizer_state_dict = save_optimizer_state_dict(global_optimizer.state_dict())
                     self.model_state_dict = save_model_state_dict(model.state_dict())
@@ -364,7 +250,7 @@ class Server:
                     print('Warning:client centntroid is None')
             if self.avg_cent_ is not None:
                 self.avg_cent_=self.avg_cent_/len(client)
-                if self.avg_cent == None:
+                if self.avg_cent is None:
                     self.avg_cent = self.avg_cent_
                 self.avg_cent = cfg['decay']*self.avg_cent+(1-cfg['decay'])*self.avg_cent_
                  
@@ -530,50 +416,7 @@ class Client:
     def make_dataset(self, dataset, metric, logger):
         if 'sup' in cfg['loss_mode'] or 'bmd' in cfg['loss_mode']:# or 'sim' in cfg['loss_mode']:
             return None,None,dataset
-        # elif 'fix' in cfg['loss_mode']:
-        #     with torch.no_grad():
-        #         data_loader = make_data_loader({'train': dataset}, 'global', shuffle={'train': False})['train']
-        #         model = eval('models.{}(track=True).to(cfg["device"])'.format(cfg['model_name']))
-        #         # model = eval('models.{}()'.format(cfg['model_name']))
-        #         # model = torch.nn.DataParallel(model,device_ids = [0, 1])
-        #         # model.to(cfg["device"])
-        #         model.load_state_dict(self.model_state_dict,strict=False)
-        #         model.train(False)
-        #         output = []
-        #         target = []
-        #         for i, input in enumerate(data_loader):
-        #             input = collate(input)
-        #             input = to_device(input, cfg['device'])
-        #             output_ = model(input)
-        #             output_i = output_['target']
-        #             target_i = input['target']
-        #             output.append(output_i.cpu())
-        #             target.append(target_i.cpu())
-        #         output_, input_ = {}, {}
-        #         output_['target'] = torch.cat(output, dim=0)
-        #         input_['target'] = torch.cat(target, dim=0)
-        #         evaluation = metric.evaluate(['PAccuracy'], input_, output_)
-        #         output_['target'] = F.softmax(output_['target'], dim=-1)
-        #         new_target, mask = self.make_hard_pseudo_label(output_['target'])
-        #         output_['mask'] = mask
-        #         evaluation = metric.evaluate(['MAccuracy', 'LabelRatio'], input_, output_)
-        #         logger.append(evaluation, 'train', n=len(input_['target']))
-        #         if torch.any(mask):
-        #             fix_dataset = copy.deepcopy(dataset)
-        #             fix_dataset.target = new_target.tolist()
-        #             mask = mask.tolist()
-        #             fix_dataset.data = list(compress(fix_dataset.data, mask))
-        #             fix_dataset.target = list(compress(fix_dataset.target, mask))
-        #             fix_dataset.other = {'id': list(range(len(fix_dataset.data)))}
-        #             if 'mix' in cfg['loss_mode']:
-        #                 mix_dataset = copy.deepcopy(dataset)
-        #                 mix_dataset.target = new_target.tolist()
-        #                 mix_dataset = MixDataset(len(fix_dataset), mix_dataset)
-        #             else:
-        #                 mix_dataset = None
-        #             return fix_dataset, mix_dataset
-        #         else:
-        #             return None
+        
         elif 'sim' in cfg['loss_mode']:
             with torch.no_grad():
                 data_loader = make_data_loader({'train': dataset}, 'global', shuffle={'train': False})['train']
@@ -685,6 +528,7 @@ class Client:
             raise ValueError('Not valid client loss mode')
 
     def train(self, dataset, lr, metric, logger):
+        print("loss mode:",cfg['loss_mode'])
         if cfg['loss_mode'] == 'sup':
             data_loader = make_data_loader({'train': dataset}, 'client')['train']
             # model = eval('models.{}().to(cfg["device"])'.format(cfg['model_name']))
@@ -708,6 +552,7 @@ class Client:
                 num_batches = int(np.ceil(len(data_loader) * float(cfg['local_epoch'][0])))
             else:
                 num_batches = None
+            
             for epoch in range(1, cfg['client']['num_epochs'] + 1):
                 for i, input in enumerate(data_loader):
                     input = collate(input)
@@ -749,6 +594,7 @@ class Client:
                 num_batches = int(np.ceil(len(data_loader) * float(cfg['local_epoch'][0])))
             else:
                 num_batches = None
+            print("cfg['client']['num_epochs']:",cfg['client']['num_epochs'])
             for epoch in range(1, cfg['client']['num_epochs'] + 1):
                 for i, input in enumerate(data_loader):
                     # print(type(input['data']))
@@ -785,6 +631,7 @@ class Client:
                 num_batches = int(np.ceil(len(fix_data_loader) * float(cfg['local_epoch'][0])))
             else:
                 num_batches = None
+            print("cfg['client']['num_epochs']:",cfg['client']['num_epochs'])
             for epoch in range(1, cfg['client']['num_epochs'] + 1):
                 for i, input in enumerate(fix_data_loader):
                     
@@ -816,6 +663,7 @@ class Client:
                 num_batches = int(np.ceil(len(fix_data_loader) * float(cfg['local_epoch'][0])))
             else:
                 num_batches = None
+            print("cfg['client']['num_epochs']:",cfg['client']['num_epochs'])
             for epoch in range(1, cfg['client']['num_epochs'] + 1):
                 for i, (fix_input, mix_input) in enumerate(zip(fix_data_loader, mix_data_loader)):
                     input = {'data': fix_input['data'], 'target': fix_input['target'], 'aug': fix_input['aug'],
@@ -1030,154 +878,7 @@ class Client:
                     logger.append(evaluation, 'train', n=input_size)
                     if num_batches is not None and i == num_batches - 1:
                         break
-        # elif 'fix' in cfg['loss_mode'] and 'mix' not in cfg['loss_mode']:
-        #     # _,_,dataset = dataset
-        #     # data_loader = make_data_loader({'train': dataset}, 'client')['train']
-        #     fix_dataset, _ ,_ = dataset
-        #     fix_data_loader = make_data_loader({'train': fix_dataset}, 'client')['train']
-        #     # model = eval('models.{}().to(cfg["device"])'.format(cfg['model_name']))
-        #     if cfg['world_size']==1:
-        #         model = eval('models.{}().to(cfg["device"])'.format(cfg['model_name']))
-        #     elif cfg['world_size']>1:
-        #         cfg["device"] = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        #         model = eval('models.{}()'.format(cfg['model_name']))
-        #         model = torch.nn.DataParallel(model,device_ids = [0, 1])
-        #         model.to(cfg["device"])
-        #     model.load_state_dict(self.model_state_dict, strict=False)
-        #     self.optimizer_state_dict['param_groups'][0]['lr'] = lr
-        #     optimizer = make_optimizer(model.parameters(), 'local')
-        #     optimizer.load_state_dict(self.optimizer_state_dict)
-        #     model.train(True)
-        #     if cfg['world_size']==1:
-        #         model.projection.requires_grad_(False)
-        #     if cfg['world_size']>1:
-        #         model.module.projection.requires_grad_(False)
-        #     g_epoch = epoch
-        #     # for v,k in model.named_parameters():
-        #     #     print(f'nmae{v} grad required{k.requires_grad}')
-        #     # if self.supervised == False:
-        #     #     model.linear.requires_grad_(False)
-        #     if cfg['world_size']==1:
-        #         if 'ft' in cfg['loss_mode'] and 'bl' not in cfg['loss_mode']:
-        #             if epoch <= cfg['switch_epoch'] :
-        #                 model.linear.requires_grad_(False)
-        #             elif epoch > cfg['switch_epoch']:
-        #                 model.projection.requires_grad_(False)
-        #         elif 'ft' in cfg['loss_mode'] and 'bl'  in cfg['loss_mode']:
-        #             if epoch > cfg['switch_epoch'] :
-        #                 model.linear.requires_grad_(False)
-        #             elif epoch <= cfg['switch_epoch']:
-        #                 model.projection.requires_grad_(False)
-        #         elif 'at' in cfg['loss_mode']:
-        #             if cfg['srange'][0]<=epoch<=cfg['srange'][1] or cfg['srange'][2]<=epoch<=cfg['srange'][3] or cfg['srange'][4]<=epoch<=cfg['srange'][5] or cfg['srange'][6]<=epoch<=cfg['srange'][7]:
-        #                 model.projection.requires_grad_(False)
-        #             else:
-        #                 model.linear.requires_grad_(False)
-        #     elif cfg['world_size']>1:
-        #         if 'ft' in cfg['loss_mode'] and 'bl' not in cfg['loss_mode']:
-        #             if epoch <= cfg['switch_epoch'] :
-        #                 model.module.linear.requires_grad_(False)
-        #             elif epoch > cfg['switch_epoch']:
-        #                 model.module.projection.requires_grad_(False)
-        #         elif 'ft' in cfg['loss_mode'] and 'bl'  in cfg['loss_mode']:
-        #             if epoch > cfg['switch_epoch'] :
-        #                 model.module.linear.requires_grad_(False)
-        #             elif epoch <= cfg['switch_epoch']:
-        #                 model.module.projection.requires_grad_(False)
-        #         elif 'at' in cfg['loss_mode']:
-        #             if cfg['srange'][0]<=epoch<=cfg['srange'][1] or cfg['srange'][2]<=epoch<=cfg['srange'][3] or cfg['srange'][4]<=epoch<=cfg['srange'][5] or cfg['srange'][6]<=epoch<=cfg['srange'][7]:
-        #                 model.module.projection.requires_grad_(False)
-        #             else:
-        #                 model.module.linear.requires_grad_(False)
-        #     # if 'ft' in cfg['loss_mode']:
-        #     #     if epoch > cfg['switch_epoch'] :
-        #     #         model.linear.requires_grad_(False)
-        #     #     elif epoch <= cfg['switch_epoch']:
-        #     #         model.projection.requires_grad_(False)
-        #     # elif 'at' in cfg['loss_mode']:
-        #     #     if epoch==21 or epoch==42 or epoch==63 or epoch==84 or 100<epoch<=105:
-        #     #         model.projection.requires_grad_(False)
-        #     #     else:
-        #     #         model.linear.requires_grad_(False)
-                    
-        #     # for v,k in model.named_parameters():
-        #     #     print(f'nmae{v} grad required{k.requires_grad}')
-        #     if cfg['client']['num_epochs'] == 1:
-        #         num_batches = int(np.ceil(len(data_loader) * float(cfg['local_epoch'][0])))
-        #     else:
-        #         num_batches = None
-        #     for epoch in range(1, cfg['client']['num_epochs'] + 1):
-        #         for i, input in enumerate(fix_data_loader):
-        #             input = collate(input)
-        #             input_size = input['data'].size(0)
-        #             input['loss_mode'] = cfg['loss_mode']
-        #             input = to_device(input, cfg['device'])
-        #             input['supervised_mode'] = self.supervised
-        #             input['batch_size'] = cfg['client']['batch_size']['train']
-        #             input['epoch'] = g_epoch
-        #             optimizer.zero_grad()
-        #             output = model(input)
-        #             # print(output.keys())
-        #             output['loss'] = output['loss'].mean() if cfg['world_size'] > 1 else output['loss']
-        #             output['loss'].backward()
-        #             torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
-        #             optimizer.step()
-        #             # evaluation = metric.evaluate(metric.metric_name['train'], input, output)
-        #             evaluation = metric.evaluate(['Loss', 'Accuracy'], input, output)
-        #             logger.append(evaluation, 'train', n=input_size)
-        #             if num_batches is not None and i == num_batches - 1:
-        #                 break
-        # elif 'fix' in cfg['loss_mode'] and 'mix' in cfg['loss_mode'] and CI_dataset is not None:
-        #     fix_dataset, mix_dataset,_ = dataset
-        #     fix_data_loader = make_data_loader({'train': fix_dataset}, 'client')['train']
-        #     mix_data_loader = make_data_loader({'train': mix_dataset}, 'client')['train']
-        #     # print(mix_data_loader)
-        #     ci_data_loader = make_data_loader({'train':CI_dataset},'client')['train']
-        #     # print(ci_data_loader)
-        #     model = eval('models.{}().to(cfg["device"])'.format(cfg['model_name']))
-        #     model.load_state_dict(self.model_state_dict, strict=False)
-        #     self.optimizer_state_dict['param_groups'][0]['lr'] = lr
-        #     optimizer = make_optimizer(model.parameters(), 'local')
-        #     optimizer.load_state_dict(self.optimizer_state_dict)
-        #     model.train(True)
-        #     if cfg['world_size']==1:
-        #         model.projection.requires_grad_(False)
-        #     if cfg['world_size']>1:
-        #         model.module.projection.requires_grad_(False)
-        #     if cfg['client']['num_epochs'] == 1:
-        #         num_batches = int(np.ceil(len(fix_data_loader) * float(cfg['local_epoch'][0])))
-        #     else:
-        #         num_batches = None
-            
-        #     for epoch in range(1, cfg['client']['num_epochs'] + 1):
-        #         for i, (fix_input,mix_input,ci_input) in enumerate(zip(fix_data_loader, mix_data_loader,ci_data_loader)):
-        #             # input = {'data': fix_input['aug'], 'target': fix_input['target'], 'aug': fix_input['aug'],
-        #             #          'mix_data': mix_input['aug'], 'mix_target': mix_input['target']}
-        #             # input = {'data': fix_input['data'], 'augw':fix_input['augw'], 'target': fix_input['target'], 'augs': fix_input['augs'],
-        #             #          'mix_data': mix_input['augw'], 'mix_target': mix_input['target']}
-        #             input = {'data': fix_input['augw'], 'target': fix_input['target'], 'aug': fix_input['augs'],
-        #                     'mix_data': mix_input['augs'], 'mix_target': mix_input['target'],'ci_data':ci_input['data'],'ci_target':ci_input['target']}
-                    
-        #             input = collate(input)
-        #             # print(len(ci_input['data']))
-        #             input_size = input['data'].size(0)
-        #             input['lam'] = self.beta.sample()[0]
-        #             input['mix_data'] = (input['lam'] * input['data'] + (1 - input['lam']) * input['mix_data']).detach()
-        #             input['mix_target'] = torch.stack([input['target'], input['mix_target']], dim=-1)
-        #             input['loss_mode'] = cfg['loss_mode']
-        #             input = to_device(input, cfg['device'])
-        #             optimizer.zero_grad()
-        #             aug_output,mix_output = model(input)
-        #             output['loss']  = self.EL_loss(input['id'].detach().tolist(),aug_output, input['target'].detach())
-        #             output['loss'] += input['lam'] * self.EL_loss(input['id'].detach(),mix_output, input['mix_target'][:, 0].detach()) + (
-        #                     1 - input['lam']) * self.EL_loss(input['id'].detach(),mix_output, input['mix_target'][:, 1].detach())
-        #             output['loss'].backward()
-        #             torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
-        #             optimizer.step()
-        #             evaluation = metric.evaluate(['Loss', 'Accuracy'], input, output)
-        #             logger.append(evaluation, 'train', n=input_size)
-        #             if num_batches is not None and i == num_batches - 1:
-        #                 break
+
         elif 'fix' in cfg['loss_mode'] and 'mix' in cfg['loss_mode'] and CI_dataset is not None:
             fix_dataset, mix_dataset,_ = dataset
             fix_data_loader = make_data_loader({'train': fix_dataset}, 'client')['train']
@@ -1227,54 +928,6 @@ class Client:
                     logger.append(evaluation, 'train', n=input_size)
                     if num_batches is not None and i == num_batches - 1:
                         break
-        # elif 'fix' in cfg['loss_mode'] and 'mix' in cfg['loss_mode'] and CI_dataset is not None:
-        #     fix_dataset, mix_dataset,_ = dataset
-        #     fix_data_loader = make_data_loader({'train': fix_dataset}, 'client')['train']
-        #     mix_data_loader = make_data_loader({'train': mix_dataset}, 'client')['train']
-        #     # print(mix_data_loader)
-        #     ci_data_loader = make_data_loader({'train':CI_dataset},'client')['train']
-        #     # print(ci_data_loader)
-        #     model = eval('models.{}().to(cfg["device"])'.format(cfg['model_name']))
-        #     model.load_state_dict(self.model_state_dict, strict=False)
-        #     self.optimizer_state_dict['param_groups'][0]['lr'] = lr
-        #     optimizer = make_optimizer(model.parameters(), 'local')
-        #     optimizer.load_state_dict(self.optimizer_state_dict)
-        #     model.train(True)
-        #     if cfg['world_size']==1:
-        #         model.projection.requires_grad_(False)
-        #     if cfg['world_size']>1:
-        #         model.module.projection.requires_grad_(False)
-        #     if cfg['client']['num_epochs'] == 1:
-        #         num_batches = int(np.ceil(len(fix_data_loader) * float(cfg['local_epoch'][0])))
-        #     else:
-        #         num_batches = None
-            
-        #     for epoch in range(1, cfg['client']['num_epochs'] + 1):
-        #         for i, (fix_input,mix_input,ci_input) in enumerate(zip(fix_data_loader, mix_data_loader,ci_data_loader)):
-        #             # input = {'data': fix_input['aug'], 'target': fix_input['target'], 'aug': fix_input['aug'],
-        #             #          'mix_data': mix_input['aug'], 'mix_target': mix_input['target']}
-        #             # input = {'data': fix_input['data'], 'augw':fix_input['augw'], 'target': fix_input['target'], 'augs': fix_input['augs'],
-        #             #          'mix_data': mix_input['augw'], 'mix_target': mix_input['target']}
-        #             input = {'data': fix_input['augw'], 'target': fix_input['target'], 'aug': fix_input['augs'],
-        #                     'mix_data': mix_input['augs'], 'mix_target': mix_input['target'],'ci_data':ci_input['data'],'ci_target':ci_input['target']}
-                    
-        #             input = collate(input)
-        #             # print(len(ci_input['data']))
-        #             input_size = input['data'].size(0)
-        #             input['lam'] = self.beta.sample()[0]
-        #             input['mix_data'] = (input['lam'] * input['data'] + (1 - input['lam']) * input['mix_data']).detach()
-        #             input['mix_target'] = torch.stack([input['target'], input['mix_target']], dim=-1)
-        #             input['loss_mode'] = cfg['loss_mode']
-        #             input = to_device(input, cfg['device'])
-        #             optimizer.zero_grad()
-        #             output = model(input)
-        #             output['loss'].backward()
-        #             torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
-        #             optimizer.step()
-        #             evaluation = metric.evaluate(['Loss', 'Accuracy'], input, output)
-        #             logger.append(evaluation, 'train', n=input_size)
-        #             if num_batches is not None and i == num_batches - 1:
-                        break
         
         elif 'bmd' in cfg['loss_mode']:
             _,_,dataset = dataset
@@ -1293,7 +946,7 @@ class Client:
             self.optimizer_state_dict['param_groups'][0]['lr'] = lr
             # self.optimizer_state_dict['param_groups'][0]['lr'] = 0.001
 
-            if cfg['model_name'] == 'resnet50' or cfg['model_name'] == 'resnet9' and cfg['par'] == 1:
+            if cfg['model_name'] == 'resnet50' and cfg['par'] == 1:
                 print('freezing')
                 cfg['local']['lr'] = lr
                 # cfg['local']['lr'] = 0.001
@@ -1369,85 +1022,19 @@ class Client:
                 num_local_epochs = cfg['tde']
             else:
                 num_local_epochs = cfg['client']['num_epochs']
-            print(num_local_epochs)
+            #print(num_local_epochs)
+            
+          
             for epoch in range(0, num_local_epochs ):
-                # data_loader = make_data_loader({'train': dataset}, 'client')['train']
-                # with torch.no_grad():
-                #     model.eval()
-                #     print("update psd label bank!")
-                #     glob_multi_feat_cent, all_psd_label = init_multi_cent_psd_label(model,data_loader)
+                output = {}
+                # print(self.cent)
+                # print(self.cent,self.avg_cent)
+                loss,cent = bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,self.cent,self.avg_cent)
+                # loss,cent = shot_train(model,train_data_loader,test_data_loader,optimizer,epoch,self.cent,self.avg_cent)
+                self.cent = cent
+                # print(self.cent)
+                output['loss'] = loss
                     
-                #     model.train()
-                # epoch_idx=epoch
-                # for i, input in enumerate(data_loader):
-                #     # print(i)
-                #     input = collate(input)
-                #     input_size = input['data'].size(0)
-                #     input['loss_mode'] = cfg['loss_mode']
-                #     input = to_device(input, cfg['device'])
-                #     optimizer.zero_grad()
-                #     # iter_idx += 1
-                #     # imgs_train = imgs_train.cuda()
-                #     # imgs_idx = imgs_idx.cuda() 
-                    
-                #     psd_label = all_psd_label[input['id']]
-                    
-                #     embed_feat, pred_cls = model(input)
-                    
-                #     if pred_cls.shape != psd_label.shape:
-                #         # psd_label is not one-hot like.
-                #         psd_label = torch.zeros_like(pred_cls).scatter(1, psd_label.unsqueeze(1), 1)
-                    
-                #     mean_pred_cls = torch.mean(pred_cls, dim=0, keepdim=True) #[1, C]
-                #     reg_loss = - torch.sum(torch.log(mean_pred_cls) * mean_pred_cls)
-                #     ent_loss = - torch.sum(torch.log(pred_cls) * pred_cls, dim=1).mean()
-                #     psd_loss = - torch.sum(torch.log(pred_cls) * psd_label, dim=1).mean()
-                    
-                #     if epoch_idx >= 1.0:
-                #         loss = ent_loss + 2.0 * psd_loss
-                #     else:
-                #         loss = - reg_loss + ent_loss
-                    
-                #     #==================================================================#
-                #     # SOFT FEAT SIMI LOSS
-                #     #==================================================================#
-                #     normed_emd_feat = embed_feat / torch.norm(embed_feat, p=2, dim=1, keepdim=True)
-                #     dym_feat_simi = torch.einsum("cmd, nd -> ncm", glob_multi_feat_cent, normed_emd_feat)
-                #     dym_feat_simi, _ = torch.max(dym_feat_simi, dim=2) #[N, C]
-                #     dym_label = torch.softmax(dym_feat_simi, dim=1)    #[N, C]
-                    
-                #     dym_psd_loss = - torch.sum(torch.log(pred_cls) * dym_label, dim=1).mean() - torch.sum(torch.log(dym_label) * pred_cls, dim=1).mean()
-                    
-                #     if epoch_idx >= 1.0:
-                #         loss += 0.5 * dym_psd_loss
-                #     #==================================================================#
-                #     #==================================================================#
-                #     # lr_scheduler(optimizer, iter_idx, iter_max)
-                #     # optimizer.zero_grad()
-                #     loss.backward()
-                #     torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
-                #     optimizer.step()
-                #     with torch.no_grad():
-                #         # loss_stack.append(loss.cpu().item())
-                #         glob_multi_feat_cent = EMA_update_multi_feat_cent_with_feat_simi(glob_multi_feat_cent, embed_feat, decay=0.9999)
-                #     # output = model(input)
-                #     # print(output.keys())
-                    output = {}
-                    # print(self.cent)
-                    # print(self.cent,self.avg_cent)
-                    loss,cent = bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,self.cent,self.avg_cent)
-                    self.cent = cent
-                    # print(self.cent)
-                    output['loss'] = loss
-                    # output['loss'] = output['loss'].mean() if cfg['world_size'] > 1 else output['loss']
-                    # output['loss'].backward()
-                    # torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
-                    # optimizer.step()
-                    # evaluation = metric.evaluate(metric.metric_name['train'], input, output)
-                    # evaluation = metric.evaluate(['Loss', 'Accuracy'], input, output)
-                    # logger.append(evaluation, 'train', n=input_size)
-                    # if num_batches is not None and i == num_batches - 1:
-                    #     break
         elif 'fix' in cfg['loss_mode'] and 'mix' in cfg['loss_mode'] and CI_dataset is  None:
             fix_dataset, mix_dataset,_ = dataset
             fix_data_loader = make_data_loader({'train': fix_dataset}, 'client')['train']
@@ -1554,53 +1141,131 @@ class Client:
         self.model_state_dict = save_model_state_dict(model.state_dict())
         # self.model_state_dict = save_model_state_dict(model.module.state_dict() if cfg['world_size'] > 1 else model.state_dict())
         return
+
+
+def shot_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg_cent):
+    loss_stack = []
+    num_classes = 31
+    avg_label_feat = torch.zeros(num_classes,256)
+    with torch.no_grad():
+        model.eval()
+        pred_label = init_psd_label_shot_icml(model,test_data_loader)
+        #print("len dataloader:",len(dataloader))
+        print("len pred_label:",len(pred_label))
+    
+    model.train()
+    epoch_idx=epoch
+    for i, input in enumerate(test_data_loader):
+        input = collate(input)
+        input_size = input['data'].size(0)
+        if input_size<=1:
+            break
+        input['loss_mode'] = cfg['loss_mode']
+        input = to_device(input, cfg['device'])
+        optimizer.zero_grad()
+        psd_label = pred_label[input['id']]
+        psd_label_ = pred_label[input['id']]
+
+        if cfg['add_fix']==0:
+            embed_feat, pred_cls = model(input)
+        elif cfg['add_fix']==1:
+            embed_feat, pred_cls,x_s = model(input)
+        
+        #act_loss = sum([item['mean_norm'] for item in list(model.act_stats.values())])
+        #print("psd_label:",psd_label )
+        
+        if pred_cls.shape != psd_label.shape:
+            # psd_label is not one-hot like.
+            psd_label = to_device(psd_label,cfg['device'])
+            psd_label = torch.zeros_like(pred_cls).scatter(1, psd_label.unsqueeze(1), 1)
+        
+        #print("psd_label:",psd_label )
+        mean_pred_cls = torch.mean(pred_cls, dim=0, keepdim=True) #[1, C]
+        reg_loss = - torch.sum(torch.log(mean_pred_cls) * mean_pred_cls)
+        ent_loss = - torch.sum(torch.log(pred_cls) * pred_cls, dim=1).mean()
+        psd_loss = - torch.sum(torch.log(pred_cls) * psd_label, dim=1).mean()
+        
+        #if epoch_idx >= 1.0:
+            # loss = 2.0 * psd_loss
+        #    loss = ent_loss + 1.0 * psd_loss
+        #else:
+        loss = - reg_loss + ent_loss + 0.5*psd_loss
+        unique_labels = torch.unique(psd_label_).cpu().numpy() 
+        class_cent = torch.zeros(num_classes,embed_feat.shape[0])
+        #batch_centers = torch.zeros(len(unique_labels).embed_feat.shape[1])
+            
+
+        #print("loss_reg_dyn:",loss)
+        #==================================================================#
+        # loss = ent_loss + 1* psd_loss + 0.1 * dym_psd_loss - reg_loss + cfg['wt_actloss']*act_loss
+        #==================================================================#
+        #==================================================================#
+        #==================================================================#
+        # lr_scheduler(optimizer, iter_idx, iter_max)
+        # optimizer.zero_grad()
+        #==================================================================#
+        # print(cent.shape,avg_cent.shape)
+        #print("cfg_avg_cent:",cfg['avg_cent'])
+        #avg_cent = torch.zeros(num_classes,embed_feat.shape[1])
+        if cfg['avg_cent'] and avg_cent is not None:
+        #if True:    
+            cent_batch = torch.matmul(torch.transpose(psd_label,0,1), embed_feat)
+            #print("clnt_cent:",cent_batch)
+            cent_batch = cent_batch / (1e-9 + psd_label.sum(axis=0)[:,None])
+            server_cent = torch.squeeze(torch.Tensor(avg_cent))
+            #print("server_cent:",server_cent.shape)
+            clnt_cent = cent_batch[unique_labels]/torch.norm(cent_batch[unique_labels],dim=1,keepdim=True)
+            server_cent = server_cent/torch.norm(server_cent,dim=1,keepdim=True)
+            server_cent = server_cent.to(cfg['device'])
+            server_cent = torch.transpose(server_cent,0,1)
+            #print("server_cent:",server_cent.shape)
+            #print("clnt_cent:",clnt_cent.shape)
+            #server_cent = (server_cent, cfg['device'])
+
+            similarity_mat = torch.matmul(clnt_cent,server_cent)
+            temp = 8.0
+            similarity_mat = torch.exp(similarity_mat/temp)
+            pos_m = torch.diag(similarity_mat)
+            pos_neg_m = torch.sum(similarity_mat,axis = 1)
+            nce_loss = -1.0*torch.sum(torch.log(pos_m/pos_neg_m))
+            loss += cfg['gamma']*nce_loss
+            #print("reg_loss:",reg_loss,"ent_loss:",ent_loss,"psd_loss:",psd_loss,"nce_loss:",nce_loss)
+        if cfg['add_fix'] ==1:
+            target_prob,target_= torch.max(dym_label, dim=-1)
+            label_s = torch.softmax(x_s,dim=1)
+            fix_loss = loss_fn(x_s,target_.detach())
+            # print(loss)
+            loss+=fix_loss
+     
+        optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+        optimizer.step()
+    
+    with torch.no_grad():
+        loss_stack.append(loss.cpu().item())
+        cent = get_final_centroids(model,test_data_loader,pred_label)
+        #print("cent here:",cent.shape)
+    
+       
+    train_loss = np.mean(loss_stack)
+
+    return train_loss,cent
+
+
+
+
 def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg_cent):
     loss_stack = []
     with torch.no_grad():
         model.eval()
-        # print("update psd label bank!")
         glob_multi_feat_cent, all_psd_label ,all_emd_feat= init_multi_cent_psd_label(model,test_data_loader)
-        # print(all_emd_feat.shape)
-        # print(type(all_emd_feat))
-        # print(all_emd_feat[0])
-      
+        #init_psd_label_shot_icml(model,test_data_loader)
         mean_p = torch.mean(all_emd_feat,axis = 0)
         std_p = torch.std(all_emd_feat,axis = 0)
         epsi = 1e-8
         kl_loss = torch.mean(-torch.log(std_p+epsi)+torch.square(std_p)+torch.square(mean_p)-0.5)
-        print(kl_loss)
-        # exit()
-
-        # print(glob_multi_feat_cent.squeeze().shape)
-        # print(all_psd_label.shape)
-        # if epoch%2==0:
-        #     print(glob_multi_feat_cent.shape)
-        #     num_cent = glob_multi_feat_cent.shape[1]
-        #     temp = []
-        #     from sklearn.manifold import TSNE
-        #     import matplotlib.pyplot as plt
-        #     from matplotlib import cm
-        #     tsne = TSNE(2,perplexity = num_cent, verbose=1)
-        #     # for i in range(glob_multi_feat_cent.shape[0]):
-        #     #     tsne_proj = tsne.fit_transform(glob_multi_feat_cent[i].cpu()) 
-        #     #     temp.append(tsne_proj)
-        #     k_ = glob_multi_feat_cent.cpu().reshape(-1,512)
-        #     print(k_.shape)
-        #     tsne_proj = tsne.fit_transform(k_) 
-        #     print(f'shape value{tsne_proj.shape}')
-        #     cmap = cm.get_cmap('tab20')
-        #     fig, ax = plt.subplots(figsize=(8,8))
-        #     l=0
-        #     for i in range(tsne_proj.shape[0]//num_cent):
-        #         indices = slice(l,l+num_cent)
-        #         l+=num_cent
-        #         print(indices)
-        #         ax.scatter(tsne_proj[indices,0],tsne_proj[indices,1], c=np.array(cmap(i)).reshape(1,4), label = i ,alpha=0.5)
-        #     ax.legend(fontsize='large', markerscale=2)
-        #     plt.show()
-        #     exit()
     model.train()
-    cent = glob_multi_feat_cent
     epoch_idx=epoch
     for i, input in enumerate(train_data_loader):
         # print(i)
@@ -1611,15 +1276,15 @@ def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg_
         input['loss_mode'] = cfg['loss_mode']
         input = to_device(input, cfg['device'])
         optimizer.zero_grad()
-        # iter_idx += 1
-        # imgs_train = imgs_train.cuda()
-        # imgs_idx = imgs_idx.cuda() 
-        
         psd_label = all_psd_label[input['id']]
-        # print(input)
-        embed_feat, pred_cls = model(input)
-        act_loss = sum([item['mean_norm'] for item in list(model.act_stats.values())])
 
+        if cfg['add_fix']==0:
+            embed_feat, pred_cls = model(input)
+        elif cfg['add_fix']==1:
+            embed_feat, pred_cls,x_s = model(input)
+        
+        #act_loss = sum([item['mean_norm'] for item in list(model.act_stats.values())])
+        
         if pred_cls.shape != psd_label.shape:
             # psd_label is not one-hot like.
             psd_label = torch.zeros_like(pred_cls).scatter(1, psd_label.unsqueeze(1), 1)
@@ -1628,13 +1293,13 @@ def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg_
         reg_loss = - torch.sum(torch.log(mean_pred_cls) * mean_pred_cls)
         ent_loss = - torch.sum(torch.log(pred_cls) * pred_cls, dim=1).mean()
         psd_loss = - torch.sum(torch.log(pred_cls) * psd_label, dim=1).mean()
-        # print(epoch_idx)
-        # if epoch_idx >= 1.0:
-        #     loss = 2.0 * psd_loss
-        #     # loss = ent_loss + 1.0 * psd_loss
-        # else:
-        #     loss = - reg_loss + ent_loss
-        # print(loss)
+        
+        if epoch_idx >= 1.0:
+            # loss = 2.0 * psd_loss
+            loss = ent_loss + 1.0 * psd_loss
+        else:
+            loss = - reg_loss + ent_loss
+        #print("loss_reg:",loss)
         #==================================================================#
         # SOFT FEAT SIMI LOSS
         #==================================================================#
@@ -1644,11 +1309,12 @@ def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg_
         dym_label = torch.softmax(dym_feat_simi, dim=1)    #[N, C]
         dym_psd_loss = - torch.sum(torch.log(pred_cls) * dym_label, dim=1).mean() - torch.sum(torch.log(dym_label) * pred_cls, dim=1).mean()
         
-        # if epoch_idx >= 1.0:
-        #     loss += 0.5 * dym_psd_loss
+        if epoch_idx >= 1.0:
+            loss += 0.5 * dym_psd_loss
 
+        #print("loss_reg_dyn:",loss)
         #==================================================================#
-        loss = ent_loss + 1* psd_loss + 0.1 * dym_psd_loss - reg_loss + act_loss
+        # loss = ent_loss + 1* psd_loss + 0.1 * dym_psd_loss - reg_loss + cfg['wt_actloss']*act_loss
         #==================================================================#
         #==================================================================#
         #==================================================================#
@@ -1656,22 +1322,71 @@ def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg_
         # optimizer.zero_grad()
         #==================================================================#
         # print(cent.shape,avg_cent.shape)
+        #print("cfg_avg_cent:",cfg['avg_cent'])
         if cfg['avg_cent'] and avg_cent is not None:
-            dist=0
-            # print(avg_cent.shape,cent.shape)
-            # for avg_ci,ci in zip(avg_cent.squeeze(),cent.squeeze()):
-            #     # print(avg_ci.shape,ci.shape)
-            #     # dist += np.sqrt(np.sum((avg_ci-ci)**2,axis=0))
-            #     # dist+=torch.norm((avg_ci.detach().reshape(-1) - ci.detach().reshape(-1)),0.9)
-            #     dist+= torch.norm((avg_ci.detach().reshape(-1) - ci.detach().reshape(-1)), p=2)
-            # dist = torch.sum(cent.squeeze()-avg_cent.squeeze(),)
-            cent_loss = torch.nn.MSELoss()
-            loss+=cfg['gamma']*cent_loss(cent.squeeze(),avg_cent.squeeze())
+            #cent_loss = torch.nn.MSELoss()
+            #loss+=cfg['gamma']*cent_loss(cent.squeeze(),avg_cent.squeeze())
             # loss += cfg['gamma']*dist/avg_cent.shape[0]
 
             # print(loss)
+     
+            batch_size = embed_feat.shape[0]
+            class_num  = glob_multi_feat_cent.shape[0]
+            multi_num  = glob_multi_feat_cent.shape[1]
+    
+            normed_embed_feat = embed_feat / torch.norm(embed_feat, p=2, dim=1, keepdim=True)
+            feat_simi = torch.einsum("cmd, nd -> ncm", glob_multi_feat_cent, normed_embed_feat)
+            feat_simi = feat_simi.flatten(1) #[N, C*M]
+            feat_simi = torch.softmax(feat_simi, dim=1).reshape(batch_size, class_num, multi_num) #[N, C, M]
+    
+            curr_multi_feat_cent = torch.einsum("ncm, nd -> cmd", feat_simi, normed_embed_feat)
+            curr_multi_feat_cent /= (torch.sum(feat_simi, dim=0).unsqueeze(2) + 1e-8)
+            #print("cent:",cent.shape)
+            clnt_cent = torch.squeeze(curr_multi_feat_cent)
+            #print("embed_feat:",embed_feat.shape)
+            #clnt_cent = torch.squeeze(embed_feat)
+            #normed_emd_feat = embed_feat / torch.norm(embed_feat, p=2, dim=1, keepdim=True)
+            #dym_feat_simi = torch.einsum("cmd, nd -> ncm", glob_multi_feat_cent, normed_emd_feat)
+            server_cent = torch.squeeze(avg_cent)
+            
+            #print("clnt_cent:",clnt_cent) 
+
+            clnt_cent = clnt_cent/torch.norm(clnt_cent,dim=1,keepdim=True)
+            server_cent = server_cent/torch.norm(server_cent,dim=1,keepdim=True)
+            
+            server_cent = torch.transpose(server_cent,0,1)
+            similarity_mat = torch.matmul(clnt_cent,server_cent)
+            #print("similarity_mat:",similarity_mat)
+            temp = 8.0
+            similarity_mat = torch.exp(similarity_mat/temp)
+            pos_m = torch.diag(similarity_mat)
+            pos_neg_m = torch.sum(similarity_mat,axis = 1)
+            
+            #print("pos_m:",pos_m,"\t","neg_m:",pos_neg_m)
+            nce_loss = -1.0*torch.sum(torch.log(pos_m/pos_neg_m))
+            #print("loss:", loss,"nce_loss:",nce_loss)
+            if epoch_idx >= 1.0:
+                loss += cfg['gamma']*nce_loss
+            
+            
         if cfg['kl'] == 1:
             loss+=cfg['kl_weight']*kl_loss
+
+        if cfg['add_fix'] ==1:
+            target_prob,target_= torch.max(dym_label, dim=-1)
+            # print(target_.shape,x_s.shape)
+            label_s = torch.softmax(x_s,dim=1)
+            # print(target_.shape,label_s.shape)
+            ## tbd for testing
+            # fix_loss_symmetric  = - torch.sum(torch.log(target_prob) * label_s, dim=1).mean() - torch.sum(torch.log(label_s) * target_prob, dim=1).mean()
+            ##
+            fix_loss = loss_fn(x_s,target_.detach())
+            # print(loss)
+            loss+=fix_loss
+            # print(loss)
+            # exit()
+            # fix_loss = loss_fn(label_s,target_.detach())
+            # print(fix_loss)
 
         optimizer.zero_grad()
         loss.backward()
@@ -1680,9 +1395,8 @@ def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg_
         with torch.no_grad():
             loss_stack.append(loss.cpu().item())
             glob_multi_feat_cent = EMA_update_multi_feat_cent_with_feat_simi(glob_multi_feat_cent, embed_feat, decay=0.9999)
-        # output = model(input)
-        # print(output.keys())
-        # cent = glob_multi_feat_cent
+    
+    cent = glob_multi_feat_cent.clone()       
     train_loss = np.mean(loss_stack)
 
     return train_loss,cent

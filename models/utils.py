@@ -20,7 +20,9 @@ def register_act_hooks(model, compute_mean_norm=False, compute_std_dev=False):
 def hook_fn(module, input, output, layer_name, model, compute_mean_norm=False, compute_std_dev=False):
     result = {}
     if compute_mean_norm:
-        mean_norm = F.relu(output.clone()).norm(p=2, dim=1).mean()
+        x_ = output.clone().reshape(-1)
+        mean_norm = torch.mean(F.relu(x_)**2)
+        # mean_norm = F.relu(output.clone()).norm(p=2, dim=1).mean()
         result['mean_norm'] = cfg['mean_norm_reg'] * mean_norm
 
     if compute_std_dev:

@@ -40,6 +40,8 @@ class office31(Dataset):
         # data = np.array(data)
         # print(data.shape)
         # print(self.target_size)
+        # print(type(data))
+        # exit()
         other = {k: torch.tensor(self.other[k][index]) for k in self.other}
         input = {**other, 'data': data, 'target': target}
         if cfg['test_10_crop'] and self.split == 'test':

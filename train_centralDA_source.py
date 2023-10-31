@@ -99,7 +99,8 @@ def runExperiment():
     # transform_unsup = FixTransform(cfg['data_name_unsup'])
     # client_dataset_unsup['train'].transform = transform_unsup
     # print(cfg)
-    bt = cfg['bt']
+    # bt = cfg['bt']
+    bt = 10
     cfg['global']['batch_size']={'train':bt,'test':10}
     print(cfg['global']['batch_size'])
     # print(client_dataset_sup.keys())
@@ -121,6 +122,7 @@ def runExperiment():
     # model_t.apply(init_param)
     model = model.to(cfg['device'])
     model_t = model_t.to(cfg['device'])
+    print(model)
     # pre_model = torch.load('/home/sampathkoti/Downloads/R-50-GN.pkl',encoding= "latin1")
     # print(pre_model)
     ####

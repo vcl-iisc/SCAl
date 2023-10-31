@@ -145,7 +145,7 @@ def runExperiment():
     print(cfg['model_tag_load'])
     # exit()
     ##########################
-    tag_ = '2023_dslr_0.03_resnet50_03_sup-ft-fix'
+    tag_ = '2023_dslr_0.03_resnet50_10_sup-ft-fix'
     result = resume(tag_,'best')
     ##########################
     # result = resume(cfg['model_tag_load'],'checkpoint')
@@ -175,12 +175,12 @@ def runExperiment():
     epoch  = 0
     # print(torch.cuda.memory_summary(device=1))
     # print(cfg)
-    # with torch.no_grad():
-    #     test_model.train(False)
-    #     test_model.load_state_dict(model_t.state_dict())
-    #     # test_model.eval()
-    #     test_DA(data_loader_sup['test'], test_model, metric, logger, epoch)
-    #     test_DA(data_loader_unsup['test'], test_model, metric, logger, epoch)
+    with torch.no_grad():
+        test_model.train(False)
+        test_model.load_state_dict(model_t.state_dict())
+        # test_model.eval()
+        test_DA(data_loader_sup['test'], test_model, metric, logger, epoch)
+        test_DA(data_loader_unsup['test'], test_model, metric, logger, epoch)
         # test_DA(data_loader_sup['test'], model_t, metric, logger, epoch)
         # test_DA(data_loader_unsup['test'], model_t, metric, logger, epoch)
     # exit()
@@ -237,7 +237,7 @@ def runExperiment():
         # cfg['model_name'] = 'local'
         logger.safe(True)
         
-        train_da(client_dataset_unsup['train'], model_t, optimizer, metric, logger, epoch,scheduler)
+        # train_da(client_dataset_unsup['train'], model_t, optimizer, metric, logger, epoch,scheduler)
         # train_da(client_dataset_unsup['train'], model_t, optimizer, metric, logger, epoch,None)
         # module = model.layer1[0].n1
         # print(list(module.named_buffers()))
@@ -247,7 +247,9 @@ def runExperiment():
         # module = model.layer1[0].n1
         # print(list(module.named_buffers()))
         test_model.load_state_dict(model_t.state_dict())
+        print(test_model)
         test_DA(data_loader_unsup['test'], test_model, metric, logger, epoch)
+        exit()
         # print(list(model.buffers()))
         # module = model.layer1[0].n1
         # print(list(module.named_buffers()))

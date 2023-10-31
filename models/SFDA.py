@@ -45,34 +45,35 @@ res_dict = {"resnet18":models.resnet18, "resnet34":models.resnet34,
             "resnet152":models.resnet152, "resnext50":models.resnext50_32x4d,
             "resnext101":models.resnext101_32x8d}
 
-# class ResBase(nn.Module):
-#     def __init__(self, res_name):
-#         super(ResBase, self).__init__()
-#         model_resnet = res_dict[res_name](pretrained=True)
-#         self.conv1 = model_resnet.conv1
-#         self.bn1 = model_resnet.bn1
-#         # self.bn1 = torch.nn.GroupNorm(2, 64)
-#         self.relu = model_resnet.relu
-#         self.maxpool = model_resnet.maxpool
-#         self.layer1 = model_resnet.layer1
-#         self.layer2 = model_resnet.layer2
-#         self.layer3 = model_resnet.layer3
-#         self.layer4 = model_resnet.layer4
-#         self.avgpool = model_resnet.avgpool
-#         self.backbone_feat_dim = model_resnet.fc.in_features
+class ResBase(nn.Module):
+    def __init__(self, res_name):
+        super(ResBase, self).__init__()
+        # model_resnet = res_dict[res_name](pretrained=False)
+        model_resnet = res_dict[res_name](pretrained=True)
+        self.conv1 = model_resnet.conv1
+        self.bn1 = model_resnet.bn1
+        # self.bn1 = torch.nn.GroupNorm(2, 64)
+        self.relu = model_resnet.relu
+        self.maxpool = model_resnet.maxpool
+        self.layer1 = model_resnet.layer1
+        self.layer2 = model_resnet.layer2
+        self.layer3 = model_resnet.layer3
+        self.layer4 = model_resnet.layer4
+        self.avgpool = model_resnet.avgpool
+        self.backbone_feat_dim = model_resnet.fc.in_features
 
-#     def forward(self, x):
-#         x = self.conv1(x)
-#         x = self.bn1(x)
-#         x = self.relu(x)
-#         x = self.maxpool(x)
-#         x = self.layer1(x)
-#         x = self.layer2(x)
-#         x = self.layer3(x)
-#         x = self.layer4(x)
-#         x = self.avgpool(x)
-#         x = x.view(x.size(0), -1)
-#         return x
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.maxpool(x)
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+        x = self.avgpool(x)
+        x = x.view(x.size(0), -1)
+        return x
 class Bottleneck(nn.Module):
     expansion = 4
     def __init__(self, in_channels, out_channels, i_downsample=None, stride=1):
@@ -207,7 +208,7 @@ class Embedding(nn.Module):
     def __init__(self, feature_dim, embed_dim=256, type="ori"):
     
         super(Embedding, self).__init__()
-        # self.bn = nn.BatchNorm1d(embed_dim, affine=True)
+        self.bn = nn.BatchNorm1d(embed_dim, affine=True)
         # self.bn = torch.nn.GroupNorm(2, embed_dim, affine=True)
         self.relu = nn.ReLU(inplace=True)
         self.dropout = nn.Dropout(p=0.5)
@@ -218,8 +219,8 @@ class Embedding(nn.Module):
     def forward(self, x):
         # print(self.bottleneck,x.shape)
         x = self.bottleneck(x)
-        # if self.type == "bn":
-        #     x = self.bn(x)
+        if self.type == "bn":
+            x = self.bn(x)
         return x
 
 class Embedding_SDA(nn.Module):
@@ -294,8 +295,8 @@ class SFDA(nn.Module):
         self.class_num = cfg['target_size']          # 12 for VisDA
 
         if "resnet" in self.backbone_arch:   
-            # self.backbone_layer = ResBase(self.backbone_arch) 
-            self.backbone_layer = ResNet(Bottleneck, [3,4,6,3], self.class_num, channels=3)
+            self.backbone_layer = ResBase(self.backbone_arch) 
+            # self.backbone_layer = ResNet(Bottleneck, [3,4,6,3], self.class_num)
         elif "vgg" in self.backbone_arch:
             self.backbone_layer = VGGBase(self.backbone_arch)
         else:
@@ -304,6 +305,7 @@ class SFDA(nn.Module):
         self.backbone_feat_dim = self.backbone_layer.backbone_feat_dim
         
         self.feat_embed_layer = Embedding(self.backbone_feat_dim, self.embed_feat_dim, type="bn")
+        # self.feat_embed_layer = Embedding(self.backbone_feat_dim, self.embed_feat_dim)
         
         self.class_layer = Classifier(self.embed_feat_dim, class_num=self.class_num, type="wn")
         # self.class_layer = Classifier(self.backbone_feat_dim, class_num=self.class_num)
@@ -382,6 +384,7 @@ class SFDA(nn.Module):
                 # print('label smoothning')
                 criterion = CrossEntropyLabelSmooth(num_classes=cfg['target_size'], epsilon=0.1, reduction=True)
                 act_loss = sum([item['mean_norm'] for item in list(self.act_stats.values())])
+                # print(act_loss)
                 output['loss'] = criterion(output['target'], input['target']) + cfg['wt_actloss']*act_loss
                 # print(output['loss'])
                 # output['loss'] = loss_fn(output['target'], input['target'])
@@ -437,15 +440,21 @@ class SFDA(nn.Module):
                         output['loss'] = output['sim_loss']
             elif input['loss_mode'] == 'fix':
                 # aug_output = self.f(input['aug'])
-                aug_output,_ = self.f(input['augs'])
+                _,aug_output = self.f(input['aug'])
                 print(type(aug_output))
                 output['loss'] = loss_fn(aug_output, input['target'].detach())
             elif 'bmd' in input['loss_mode']:
                 # print(input['augw'])
                 # print(input.keys())
                 f,x =self.f(input['augw'])
+                if cfg['add_fix']==1:
+                    _,x_s = self.f(input['augs'])
                 # return f,x
-                return f,torch.softmax(x,dim=1)
+                if cfg['add_fix']==0:
+                    return f,torch.softmax(x,dim=1)
+                elif cfg['add_fix']==1:
+                    return f,torch.softmax(x,dim=1),x_s
+
                 
             elif input['loss_mode'] == 'fix-mix' and 'kl_loss' not in input:
                 _,aug_output = self.f(input['aug'])
@@ -498,24 +507,25 @@ def resnet50(momentum=None, track=True):
     # # model = ResNet(data_shape, hidden_size, Block, [1, 1, 1, 1], target_size)
     model = SFDA()
     model.backbone_arch = 'resnet50'
-    # model = convert_layers(model, torch.nn.BatchNorm2d, torch.nn.GroupNorm, num_groups = 64,convert_weights=False)
-    # model = convert_layers(model, torch.nn.BatchNorm1d, torch.nn.GroupNorm, num_groups = 64,convert_weights=False)
-    # if cfg['pre_trained']:
-    #     print('loading pretrained model')
-    #     model = get_pretrained_gn(model)
+    model = convert_layers(model, torch.nn.BatchNorm2d, torch.nn.GroupNorm, num_groups = 64,convert_weights=False)
+    model = convert_layers(model, torch.nn.BatchNorm1d, torch.nn.GroupNorm, num_groups = 64,convert_weights=False)
+    if cfg['pre_trained']:
+        print('loading pretrained model')
+        model = get_pretrained_gn(model)
         # print(model)
         # exit()
-    model.apply(init_param)
+    # model.apply(init_param)
     # model.apply(lambda m: make_batchnorm(m, momentum=momentum, track_running_stats=track))
     
     ## Register forward hook ##
-    register_act_hooks(model, compute_mean_norm=cfg['compute_mean_norm'], compute_std_dev=cfg['compute_std_dev'])
+    # register_act_hooks(model, compute_mean_norm=cfg['compute_mean_norm'], compute_std_dev=cfg['compute_std_dev'])
 
     return model
 
 def get_pretrained_gn(model):
     count_=0
-    m = torch.load('/home/sampathkoti/codes/convert_caffe2py/pytorch-resnet/resnet_gn50-pth.pth')
+    # m = torch.load('/home/sampathkoti/codes/convert_caffe2py/pytorch-resnet/resnet_gn50-pth.pth')
+    m = torch.load('./resnet_gn50-pth.pth')
     # print(len(m.keys()),len( model.state_dict().items()))
     used = []
     for k,v in model.state_dict().items():

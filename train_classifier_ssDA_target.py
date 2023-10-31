@@ -194,7 +194,7 @@ def runExperiment():
         # result = resume_DA(cfg['model_tag'])
         # result = resume_DA(cfg['model_tag'],load_tag='best')
         # tag_  = '0_dslr_to_amazon_webcam_resnet50_02'
-        tag_ = '2023_dslr_0.03_resnet50_03_sup-ft-fix'
+        tag_ = '2023_dslr_0.03_resnet50_00003_sup-ft-fix'
         # tag_ = '0_dslr_to_amazon_resnet50_01'
         # result = resume_DA(tag_,'checkpoint')
         # result = resume_DA(tag_,'best')
@@ -213,6 +213,7 @@ def runExperiment():
             # server_pre = result['server']
             # server.model_state_dict = server_pre.model_state_dict
             server.model_state_dict=result['model_state_dict']
+            last_epoch = 1
             # data_split_sup = result['data_split_sup']
             # data_split_unsup = result['data_split_unsup']
             # split_len = result['split_len']
@@ -251,8 +252,17 @@ def runExperiment():
                 # print('entered fix-mix',epoch)
                 cfg['loss_mode'] = 'alt-fix_'
                 # cfg['loss_mode'] = 'fix-mix'
+        if epoch == 1:
+            model.load_state_dict(server.model_state_dict)
+            #====#
+            test_model.load_state_dict(model.state_dict())
+            #====#
+            test_DA(data_loader_sup['test'], test_model, metric, logger, epoch=0,sup=True)
+            for domain_id,data_loader_unsup_ in data_loader_unsup.items():
+                domain = cfg['unsup_list'][domain_id]
+                test_DA(data_loader_unsup_['test'], test_model, metric, logger, epoch=0,domain=domain)
         # train_client(client_dataset_sup['train'], client_dataset_unsup['train'], server, client, supervised_clients, optimizer, metric, logger, epoch,mode)
-        # train_client_multi(client_dataset_sup['train'], client_dataset_unsup, server, client, supervised_clients, optimizer, metric, logger, epoch,mode)
+        train_client_multi(client_dataset_sup['train'], client_dataset_unsup, server, client, supervised_clients, optimizer, metric, logger, epoch,mode)
         # train_client_multi(client_dataset_sup['train'], client_dataset_unsup, server, client, supervised_clients, optimizer, metric, logger, epoch,mode,scheduler)
         # if 'ft' in cfg and cfg['ft'] == 0:
         #     train_server(server_dataset['train'], server, optimizer, metric, logger, epoch)
@@ -262,9 +272,9 @@ def runExperiment():
             # logger.reset()
             # server.update(client)
         #     train_server(server_dataset['train'], server, optimizer, metric, logger, epoch)
-        # logger.reset()
-        # server.update(client)
-        # scheduler.step()
+        logger.reset()
+        server.update(client)
+        scheduler.step()
 
         model.load_state_dict(server.model_state_dict)
         # print(model)
@@ -281,7 +291,7 @@ def runExperiment():
             domain = cfg['unsup_list'][domain_id]
             test_DA(data_loader_unsup_['test'], test_model, metric, logger, epoch,domain=domain)
         # print(logger.mean)
-        exit()
+        # exit()
         avg_accuracy=0
         avg_loss = 0 
         count = 0
@@ -762,15 +772,16 @@ def train_client_multi(client_dataset_sup, client_dataset_unsup, server, client,
         
             ACL=set(torch.arange(cfg['num_clients']).tolist())
             ACL = list(ACL-set(supervised_clients))
-            # print(ACL)
+            print(ACL)
             # ran_CL = set(torch.randperm(cfg['num_clients']).tolist())
             # ran_CL = [ran_CL-set(supervised_clients)]
             # client_id = list(set(selected_clnts)-set(supervised_clients))
             # print(client_id)
             # exit()
-            client_id = np.random.choice(np.array(ACL),num_active_clients)
-            # client_id = random.sample(ACL,num_active_clients)
+            # client_id = np.random.choice(np.array(ACL),num_active_clients)
             # print(client_id)
+            client_id = random.sample(ACL,num_active_clients)
+            print(client_id)
             # client_id = torch.arange(cfg['num_clients'])[torch.randperm(cfg['num_clients'])[:num_active_clients]].tolist()
             for i in range(num_active_clients):
                 client[client_id[i]].active = True

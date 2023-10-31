@@ -48,7 +48,10 @@ def init_multi_cent_psd_label(model, dataloader, flag=False, flag_NRC=False, con
             # For G-SFDA
             embed_feat, _, cls_out = model(input, t=1)
         else:
-            embed_feat, cls_out = model(input)
+            if cfg['add_fix']==0:
+                embed_feat, cls_out = model(input)
+            elif cfg['add_fix'] ==1:
+                embed_feat, cls_out,_ = model(input)
             # if i ==1:
             #     print(embed_feat)
         emd_feat_stack.append(embed_feat)
@@ -145,41 +148,82 @@ def init_multi_cent_psd_label(model, dataloader, flag=False, flag_NRC=False, con
             return feat_multi_cent, all_psd_label, emd_feat_out_
 
 
-def init_psd_label_shot_icml(args, model, dataloader):
-    args.distance = "cosine"
-    args.epsilon = 1e-5
-    args.threshold = 0.3
+def get_final_centroids(model,test_data_loader,pred_label):
     start_test = True
+    with torch.no_grad():
+        for i, input in enumerate(test_data_loader):
+            input = collate(input)
+            input_size = input['data'].size(0)
+            if input_size<=1:
+                break
+            input['loss_mode'] = cfg['loss_mode']
+            input = to_device(input, cfg['device'])
+        
+            psd_label = pred_label[input['id']]
+            psd_label_ = pred_label[input['id']]
+            embed_feat, pred_cls = model(input)
+            #print("psd_label:",psd_label )
+            if pred_cls.shape != psd_label.shape:
+                psd_label = to_device(psd_label,cfg['device'])
+                psd_label = torch.zeros_like(pred_cls).scatter(1, psd_label.unsqueeze(1), 1)
+            
+            if start_test:
+                all_fea = embed_feat.float().cpu()
+                all_output = psd_label.float().cpu()
+                start_test = False
+            else:
+                all_fea = torch.cat((all_fea, embed_feat.float().cpu()), 0)
+                all_output = torch.cat((all_output, psd_label.float().cpu()), 0)
+        
+    all_fea = all_fea.float().cpu().numpy()
+    K = all_output.size(1)
+    aff = all_output.float().cpu().numpy()
+    initc = aff.transpose().dot(all_fea)
+    initc = initc / (1e-8 + aff.sum(axis=0)[:,None])    
+    return initc
+
+def init_psd_label_shot_icml(model, dataloader):
+    args_distance = "cosine"
+    args_epsilon = 1e-5
+    args_threshold = 0.3
+    start_test = True
+    args_class_num = 31
     model.eval()
     
     with torch.no_grad():
         iter_test = iter(dataloader)
-        for _ in tqdm(range(len(dataloader)), ncols=60):
+        #for _ in tqdm(range(len(dataloader)), ncols=60):
+        for _ in range(len(dataloader)):    
             data = iter_test.next()
-            inputs = data[1]
-            labels = data[2]
-            inputs = inputs.cuda()
-            # feas = netB(netF(inputs))
-            # outputs = netC(feas)
-            feas, outputs = model(inputs)
+            #print("data:",data.keys())
+            #inputs = data['augw']
+            labels = data['target']
+            input = collate(data)
+            input_size = input['data'].size(0)
+            # print(input_size)
+            input['loss_mode'] = cfg['loss_mode']
+            input = to_device(input, cfg['device'])
+            
+            feas, outputs = model(input)
             if start_test:
                 all_fea = feas.float().cpu()
                 all_output = outputs.float().cpu()
-                all_label = labels.float()
+                all_label = torch.FloatTensor(labels)
                 start_test = False
             else:
                 all_fea = torch.cat((all_fea, feas.float().cpu()), 0)
                 all_output = torch.cat((all_output, outputs.float().cpu()), 0)
+                labels = torch.FloatTensor(labels)
                 all_label = torch.cat((all_label, labels.float()), 0)
 
-    ent = torch.sum(-all_output * torch.log(all_output + args.epsilon), dim=1)
-    unknown_weight = 1 - ent / np.log(args.class_num)
+    ent = torch.sum(-all_output * torch.log(all_output + args_epsilon), dim=1)
+    unknown_weight = 1 - ent / np.log(args_class_num)
     _, predict = torch.max(all_output, 1)
 
     accuracy = torch.sum(torch.squeeze(predict).float() == all_label).item() / float(all_label.size()[0])
     acc_list = [accuracy]
     
-    if args.distance == 'cosine':
+    if args_distance == 'cosine':
         all_fea = torch.cat((all_fea, torch.ones(all_fea.size(0), 1)), 1)
         all_fea = (all_fea.t() / torch.norm(all_fea, p=2, dim=1)).t()
 
@@ -189,11 +233,10 @@ def init_psd_label_shot_icml(args, model, dataloader):
     initc = aff.transpose().dot(all_fea)
     initc = initc / (1e-8 + aff.sum(axis=0)[:,None])
     cls_count = np.eye(K)[predict].sum(axis=0)
-    labelset = np.where(cls_count>args.threshold)
+    labelset = np.where(cls_count>args_threshold)
     labelset = labelset[0]
     # print(labelset)
-
-    dd = cdist(all_fea, initc[labelset], args.distance)
+    dd = cdist(all_fea, initc[labelset], args_distance)
     pred_label = dd.argmin(axis=1)
     pred_label = labelset[pred_label]
     acc = np.sum(pred_label == all_label.float().numpy()) / len(all_fea)
@@ -203,30 +246,30 @@ def init_psd_label_shot_icml(args, model, dataloader):
         aff = np.eye(K)[pred_label]
         initc = aff.transpose().dot(all_fea)
         initc = initc / (1e-8 + aff.sum(axis=0)[:,None])
-        dd = cdist(all_fea, initc[labelset], args.distance)
+        dd = cdist(all_fea, initc[labelset], args_distance)
         pred_label = dd.argmin(axis=1)
         pred_label = labelset[pred_label]
 
-    acc = np.sum(pred_label == all_label.float().numpy()) / len(all_fea)
-    acc_list.append(acc)
+    #acc = np.sum(pred_label == all_label.float().numpy()) / len(all_fea)
+    #acc_list.append(acc)
     # log_str = 'Accuracy = {:.2f}% -> {:.2f}%'.format(accuracy * 100, acc * 100)
-    log_str = "acc:" + " --> ".join("{:.3f}".format(acc) for acc in acc_list)
+    #log_str = "acc:" + " --> ".join("{:.3f}".format(acc) for acc in acc_list)
     
-    psd_confu_mat = confusion_matrix(pred_label, all_label.float().numpy())
-    psd_acc_list = psd_confu_mat.diagonal()/psd_confu_mat.sum(axis=1) * 100
-    psd_acc = psd_acc_list.mean()
-    psd_acc_str = "{:.2f}        ".format(psd_acc) + " ".join(["{:.2f}".format(i) for i in psd_acc_list])
+    #psd_confu_mat = confusion_matrix(pred_label, all_label.float().numpy())
+    #psd_acc_list = psd_confu_mat.diagonal()/psd_confu_mat.sum(axis=1) * 100
+    #psd_acc = psd_acc_list.mean()
+    #psd_acc_str = "{:.2f}        ".format(psd_acc) + " ".join(["{:.2f}".format(i) for i in psd_acc_list])
     
-    if not args.test:
-        args.log_file.write(log_str + '\n')
-        args.log_file.flush()
+    #if not args_test:
+    #    args.log_file.write(log_str + '\n')
+    #    args.log_file.flush()
     
     
-    print(log_str+'\n')
-    print(psd_acc_str)
+    #print(log_str+'\n')
+    #print(psd_acc_str)
     # return None, pred_label.astype('int')
 
-    return None, torch.from_numpy(pred_label.astype('int')).cuda()
+    return torch.from_numpy(pred_label.astype('int')).cuda()
 
 
 
@@ -243,9 +286,12 @@ def EMA_update_multi_feat_cent_with_feat_simi(glob_multi_feat_cent, embed_feat, 
     
     curr_multi_feat_cent = torch.einsum("ncm, nd -> cmd", feat_simi, normed_embed_feat)
     curr_multi_feat_cent /= (torch.sum(feat_simi, dim=0).unsqueeze(2) + 1e-8)
-    
-    glob_multi_feat_cent = glob_multi_feat_cent * decay + (1 - decay) * curr_multi_feat_cent
-    
+    if decay > 0:
+    	glob_multi_feat_cent = glob_multi_feat_cent * decay + (1 - decay) * curr_multi_feat_cent
+    else:
+        glob_multi_feat_cent = curr_multi_feat_cent
+
+
     return glob_multi_feat_cent
 
 

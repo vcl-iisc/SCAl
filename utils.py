@@ -181,7 +181,7 @@ def process_control():
         cfg['global']['shuffle'] = {'train': True, 'test': False}
         cfg['global']['num_epochs'] = 150
         cfg['global']['optimizer_name'] = 'SGD'
-        cfg['global']['lr'] = 1
+        cfg['global']['lr'] = 1.0
         cfg['global']['momentum'] = cfg['gm']
         cfg['global']['weight_decay'] = 0
         cfg['global']['nesterov'] = False
