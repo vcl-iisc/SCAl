@@ -16,7 +16,7 @@ from metrics import Accuracy
 from net_utils import set_random_seed
 from net_utils import init_multi_cent_psd_label,init_psd_label_shot_icml
 from net_utils import EMA_update_multi_feat_cent_with_feat_simi,get_final_centroids
-
+from data import make_dataset_normal
 class Server:
     def __init__(self, model):
         self.model_state_dict = save_model_state_dict(model.state_dict())
@@ -120,7 +120,52 @@ class Server:
         return
     
     def update(self, client):
-        if ('fmatch' not in cfg['loss_mode'] and cfg['adapt_wt'] == 0):
+        if ('fmatch' not in cfg['loss_mode'] and cfg['adapt_wt'] == 0 and cfg['with_BN'] == 1):
+            print('FedAvg with BN params')
+            with torch.no_grad():
+                valid_client = [client[i] for i in range(len(client)) if client[i].active]
+                if len(valid_client) > 0:
+                    # model = eval('models.{}()'.format(cfg['model_name']))
+                    if cfg['world_size']==1:
+                        model = eval('models.{}()'.format(cfg['model_name']))
+                    elif cfg['world_size']>1:
+                        cfg["device"] = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                        model = eval('models.{}()'.format(cfg['model_name']))
+                        model = torch.nn.DataParallel(model,device_ids = [0, 1])
+                        model.to(cfg["device"])
+                    # model.load_state_dict(self.model_state_dict)
+                    model.load_state_dict(self.model_state_dict)
+                    global_optimizer = make_optimizer(model.parameters(), 'global')
+                    global_optimizer.load_state_dict(self.global_optimizer_state_dict)
+                    global_optimizer.zero_grad()
+                    weight = torch.ones(len(valid_client))
+                    weight = weight / weight.sum()
+
+                    # # Store the averaged batchnorm parameters
+                    # bn_parameters = {k: None for k, v in model.named_parameters() if isinstance(v, torch.nn.BatchNorm2d)}
+                    # print()
+                    for k, v in model.named_parameters():
+                        
+                        isBatchNorm = True if  '.bn' in k else False
+                        parameter_type = k.split('.')[-1]
+                        # print(f'{k} with parameter type {parameter_type},is batchnorm {isBatchNorm}')
+                        if 'weight' in parameter_type or 'bias' in parameter_type:
+                            tmp_v = v.data.new_zeros(v.size())
+                            for m in range(len(valid_client)):
+                                # print(valid_client[m].model_state_dict.keys())
+                                if cfg['world_size']==1:
+                                    tmp_v += weight[m] * valid_client[m].model_state_dict[k]
+                                elif  cfg['world_size']>1:
+                                    tmp_v += weight[m] * valid_client[m].model_state_dict[k].to(cfg["device"])
+                            v.grad = (v.data - tmp_v).detach()
+
+                    global_optimizer.step()
+
+                    self.global_optimizer_state_dict = save_optimizer_state_dict(global_optimizer.state_dict())
+                    self.model_state_dict = save_model_state_dict(model.state_dict())
+                    # self.model_state_dict = save_model_state_dict(model.module.state_dict() if cfg['world_size'] > 1 else model.state_dict())
+        elif ('fmatch' not in cfg['loss_mode'] and cfg['adapt_wt'] == 0 and cfg['with_BN'] == 0):
+            print('FedAvg with out BN params')
             with torch.no_grad():
                 valid_client = [client[i] for i in range(len(client)) if client[i].active]
                 if len(valid_client) > 0:
@@ -144,11 +189,12 @@ class Server:
                     # bn_parameters = {k: None for k, v in model.named_parameters() if isinstance(v, torch.nn.BatchNorm2d)}
 
                     for k, v in model.named_parameters():
-                        # print(k)
-                        isBatchNorm = isinstance(v, torch.nn.BatchNorm2d)
+                        
+                        isBatchNorm = True if  '.bn' in k else False
                         parameter_type = k.split('.')[-1]
-                        # print(f'{k} with parameter type {parameter_type}')
-                        if 'weight' in parameter_type or 'bias' in parameter_type:
+                        # print(f'{k} with parameter type {parameter_type},is batchnorm {isBatchNorm}')
+                        if  not isBatchNorm and ('weight' in parameter_type or 'bias' in parameter_type):
+                            print(f'{k} with parameter type {parameter_type},is batchnorm {isBatchNorm}')
                             tmp_v = v.data.new_zeros(v.size())
                             for m in range(len(valid_client)):
                                 if cfg['world_size']==1:
@@ -162,6 +208,7 @@ class Server:
                     self.global_optimizer_state_dict = save_optimizer_state_dict(global_optimizer.state_dict())
                     self.model_state_dict = save_model_state_dict(model.state_dict())
                     # self.model_state_dict = save_model_state_dict(model.module.state_dict() if cfg['world_size'] > 1 else model.state_dict())
+
         elif ('fmatch' in cfg['loss_mode'] and cfg['adapt_wt'] == 0):
             with torch.no_grad():
                 valid_client = [client[i] for i in range(len(client)) if client[i].active]
@@ -258,6 +305,121 @@ class Server:
         for i in range(len(client)):
             client[i].active = False
         return
+    def update_BNstats(self, client,stat_type='mean'):
+        with torch.no_grad():
+            valid_client = [client[i] for i in range(len(client)) if client[i].active]
+            if len(valid_client) > 0:
+                # model = eval('models.{}()'.format(cfg['model_name']))
+                if cfg['world_size']==1:
+                    model = eval('models.{}()'.format(cfg['model_name']))
+                elif cfg['world_size']>1:
+                    cfg["device"] = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                    model = eval('models.{}()'.format(cfg['model_name']))
+                    model = torch.nn.DataParallel(model,device_ids = [0, 1])
+                    model.to(cfg["device"])
+                # model.load_state_dict(self.model_state_dict)
+                model.load_state_dict(self.model_state_dict)
+                global_optimizer = make_optimizer(model.parameters(), 'global')
+                global_optimizer.load_state_dict(self.global_optimizer_state_dict)
+                global_optimizer.zero_grad()
+                weight = torch.ones(len(valid_client))
+                for i in range(len(valid_client)):
+                    weight[i] = valid_client[i].data_len
+                # print(weight.sum())
+                weight = weight / weight.sum()
+
+                # # Store the averaged batchnorm parameters
+                # bn_parameters = {k: None for k, v in model.named_parameters() if isinstance(v, torch.nn.BatchNorm2d)}
+                # print()
+                # for name, module in model.named_modules():
+                #     if isinstance(module, torch.nn.BatchNorm2d) or isinstance(module, torch.nn.BatchNorm1d) :
+                #         print(name)
+                # for k, v in self.model_state_dict.items():             
+                #         isBatchNorm = True if  '.bn' in k or 'bn4' in k else False
+                #         istype  = True if f'.running_var'  in k else False 
+                #         # istype  = True if '.running_mean'  in k or '.running_var' in k else False 
+                #         # parameter_type = k.split('.')[-1]
+                #         # # print(f'{k} with parameter type {parameter_type},is batchnorm {isBatchNorm}')
+                #         if isBatchNorm and istype:
+                #             print(k,v)
+                if stat_type == 'var':
+                    print('averaging var')
+                    for k, v in model.state_dict().items():
+                        # print(k)
+                        # exit()
+                        isBatchNorm = True if  '.bn' in k or 'bn4' in k else False
+                        istype  = True if f'.running_{stat_type}'  in k else False 
+                        # parameter_type = k.split('.')[-1]
+                        # # print(f'{k} with parameter type {parameter_type},is batchnorm {isBatchNorm}')
+                        if isBatchNorm and istype:
+                            # print(k)
+                            
+                            tmp_v = v.data.new_zeros(v.size()).to(cfg['device'])
+                            for m in range(len(valid_client)):
+                                # print(valid_client[m].model_state_dict.keys())
+                                k_ = '.'.join(k.split('.')[:-1]) 
+                                # print(k,'.'.join(k.split('.')[:-1]) in valid_client[m].running_var.keys())
+                                # if valid_client[m].client_id == 50:
+                                
+
+                                if cfg['world_size']==1:
+                                    tmp_v += weight[m].to(cfg['device']) * valid_client[m].running_var[k_].squeeze().to(cfg['device'])
+                                elif  cfg['world_size']>1:
+                                    tmp_v += weight[m] * valid_client[m].model_state_dict[k].to(cfg["device"])
+                            # v.grad = (v.data.cpu() - tmp_v.cpu()).detach()
+                            self.model_state_dict[k] = tmp_v
+                    # for k, v in self.model_state_dict.items():             
+                    #     isBatchNorm = True if  '.bn' in k or 'bn4' in k else False
+                    #     istype  = True if f'.running_var'  in k else False 
+                    #     # istype  = True if '.running_mean'  in k or '.running_var' in k else False 
+                    #     # parameter_type = k.split('.')[-1]
+                    #     # # print(f'{k} with parameter type {parameter_type},is batchnorm {isBatchNorm}')
+                    #     if isBatchNorm and istype:
+                    #         print(k,v)
+                else:
+                    print('averaging mean')
+                    for k, v in model.state_dict().items():
+                        
+                        # exit()
+                        isBatchNorm = True if  '.bn' in k or 'bn4' in k else False
+                        istype  = True if f'.running_{stat_type}'  in k else False 
+                        # istype  = True if '.running_mean'  in k or '.running_var' in k else False 
+                        # parameter_type = k.split('.')[-1]
+                        # # print(f'{k} with parameter type {parameter_type},is batchnorm {isBatchNorm}')
+                        if isBatchNorm and istype:
+                            # print(k)
+                            
+                            tmp_v = v.data.new_zeros(v.size())
+                            for m in range(len(valid_client)):
+                                # print(valid_client[m].model_state_dict.keys())
+                                # print(k,'.'.join(k.split('.')[:-1]) in valid_client[m].running_mean.keys())
+                                if cfg['world_size']==1:
+                                    # print(valid_client[m].model_state_dict[k].shape)
+                                    # print(weight[m])
+                                    tmp_v += weight[m] * valid_client[m].model_state_dict[k]
+                                elif  cfg['world_size']>1:
+                                    tmp_v += weight[m] * valid_client[m].model_state_dict[k].to(cfg["device"])
+                            # v.grad = (v.data - tmp_v).detach()
+                            # print(k,tmp_v)
+                            # print(v)
+                            self.model_state_dict[k] = tmp_v
+                            # print(v)
+                global_optimizer.step()
+                
+                self.global_optimizer_state_dict = save_optimizer_state_dict(global_optimizer.state_dict())
+                # self.model_state_dict = save_model_state_dict(model.state_dict())
+                # for k, v in self.model_state_dict.items(): 
+                # # for k, v in model.state_dict().items():              
+                #     isBatchNorm = True if  '.bn' in k or 'bn4' in k else False
+                #     # istype  = True if f'.running_mean'  in k else False 
+                #     istype  = True if '.running_mean'  in k or '.running_var' in k else False 
+                #     # parameter_type = k.split('.')[-1]
+                #     # # print(f'{k} with parameter type {parameter_type},is batchnorm {isBatchNorm}')
+                #     if isBatchNorm and istype:
+                #         print(k,v)
+                # self.model_state_dict = save_model_state_dict(model.module.state_dict() if cfg['world_size'] > 1 else model.state_dict())
+
+
 
     def update_parallel(self, client):
         if 'frgd' not in cfg['loss_mode']:
@@ -386,8 +548,12 @@ class Client:
     def __init__(self, client_id, model, data_split=None):
         self.client_id = client_id
         self.data_split = data_split
+        self.data_len = 1
         # print(len(data_split['train']))
         self.model_state_dict = save_model_state_dict(model.state_dict())
+        self.server_state_dict = None
+        self.running_mean = None
+        self.running_var = None
         # self.model_state_dict = save_model_state_dict(model.module.state_dict() if cfg['world_size'] > 1 else model.state_dict())
         if 'fmatch' in cfg['loss_mode']:
             optimizer = make_optimizer(model.make_phi_parameters(), 'local')
@@ -412,7 +578,7 @@ class Client:
         max_p, hard_pseudo_label = torch.max(soft_pseudo_label, dim=-1)
         mask = max_p.ge(cfg['threshold'])
         return hard_pseudo_label, mask
-
+    
     def make_dataset(self, dataset, metric, logger):
         if 'sup' in cfg['loss_mode'] or 'bmd' in cfg['loss_mode']:# or 'sim' in cfg['loss_mode']:
             return None,None,dataset
@@ -734,6 +900,65 @@ class Client:
         self.optimizer_state_dict = save_optimizer_state_dict(optimizer.state_dict())
         self.model_state_dict = save_model_state_dict(model.state_dict())
         return
+    def get_stats(self,dataset, metric, logger,mode=None):
+        # tag = 'global'
+        tag = 'client'
+        # _,_,dataset = dataset
+        with torch.no_grad():
+            # test_model = copy.deepcopy(model)
+            test_model = eval('models.{}()'.format(cfg['model_name']))
+            test_model.to(cfg['device'])
+            test_model.load_state_dict(self.model_state_dict)
+            
+            dataset, _transform = make_dataset_normal(dataset)
+            data_loader = make_data_loader({'train': dataset}, tag, shuffle={'train': False})['train']
+            if mode =='mean':
+                test_model.apply(lambda m: models.make_batchnorm(m, momentum=0.1, track_running_stats=True))
+                test_model.train(True)
+                cfg['compute_running_mean'] = True
+                test_model.running_mean = {}
+                test_model.running_var = {}
+            elif mode == 'var':
+                # print('getting var stats')
+                cfg['compute_running_mean'] = False
+                test_model.running_mean = self.running_mean
+                test_model.running_var = {}
+            
+            
+            # print(len(dataset))
+            # exit()
+            self.data_len = len(dataset)
+            for i, input in enumerate(data_loader):
+                input = collate(input)
+                input = to_device(input, cfg['device'])
+                input['loss_mode'] = cfg['loss_mode']
+                input['supervised_mode'] = False
+                input['test'] = True
+                input['batch_size'] = cfg['client']['batch_size']['train']
+                test_model(input)
+            if mode == 'mean':
+                self.running_mean = test_model.running_mean
+            self.running_var = test_model.running_var
+            # print(self.running_mean.keys())
+            # if mode == 'mean':
+            #     for k, v in test_model.state_dict().items():
+            #             isBatchNorm = True if  '.bn' in k or 'bn4' in k else False
+            #             istype  = True if f'.running_{mode}'  in k else False 
+            #             # parameter_type = k.split('.')[-1]
+            #             # # print(f'{k} with parameter type {parameter_type},is batchnorm {isBatchNorm}')
+            #             k_ = '.'.join(k.split('.')[:-1]) 
+            #             if isBatchNorm and istype and self.client_id ==50:
+            #                 print(k,self.running_mean[k_].squeeze()==v,self.client_id,)
+            for k,v in self.running_var.items():
+                v = v.squeeze()
+                # if mode == 'var':
+                #     if self.client_id ==50:
+                #         print(k,v.shape,v,self.client_id)
+            # exit()
+            dataset.transform = _transform
+        self.model_state_dict = save_model_state_dict(test_model.state_dict())
+        return
+
     def trainntune(self, dataset, lr, metric, logger,epoch,CI_dataset=None):
         
         if 'sup' in cfg['loss_mode']:
@@ -766,6 +991,8 @@ class Client:
                 num_batches = int(np.ceil(len(data_loader) * float(cfg['local_epoch'][0])))
             else:
                 num_batches = None
+            model.running_mean = {}
+            model.running_var = {}
             for epoch in range(1, cfg['client']['num_epochs'] + 1):
                 for i, input in enumerate(data_loader):
                     input = collate(input)
@@ -1029,8 +1256,8 @@ class Client:
                 output = {}
                 # print(self.cent)
                 # print(self.cent,self.avg_cent)
-                loss,cent = bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,self.cent,self.avg_cent)
-                # loss,cent = shot_train(model,train_data_loader,test_data_loader,optimizer,epoch,self.cent,self.avg_cent)
+                # loss,cent = bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,self.cent,self.avg_cent)
+                loss,cent = shot_train(model,train_data_loader,test_data_loader,optimizer,epoch,self.cent,self.avg_cent)
                 self.cent = cent
                 # print(self.cent)
                 output['loss'] = loss
@@ -1283,7 +1510,7 @@ def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg_
         elif cfg['add_fix']==1:
             embed_feat, pred_cls,x_s = model(input)
         
-        #act_loss = sum([item['mean_norm'] for item in list(model.act_stats.values())])
+        # act_loss = sum([item['mean_norm'] for item in list(model.act_stats.values())])
         
         if pred_cls.shape != psd_label.shape:
             # psd_label is not one-hot like.

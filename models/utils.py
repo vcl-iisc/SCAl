@@ -30,7 +30,103 @@ def hook_fn(module, input, output, layer_name, model, compute_mean_norm=False, c
         result['std_dev'] = cfg['std_dev_reg'] * std_dev
 
     model.act_stats[layer_name] = result
+##register pre-BN hooks
+def register_preBN_hooks(model, compute_running_mean=False, compute_running_var=False):
+    # def create_hook(module,input):
+    #     x_ = lambda module, input: hook_fn_BN(module, input, layer_name=name, model=model, \
+    #                                                  compute_running_mean=compute_running_mean, compute_running_var=compute_running_var)
+    #     return input
+    def create_hook(name):
+        # print(input)
+        # exit()
+        return lambda module, input,output: hook_fn_BN(module, input,output, layer_name=name, model=model, \
+                                                     compute_running_mean=compute_running_mean, compute_running_var=compute_running_var)
+    
+    
+    for name, module in model.named_modules():
+        # print(name)
+        if (isinstance(module, nn.BatchNorm2d) or isinstance(module, nn.BatchNorm1d) ) and 'class_layer' not in name and 'class_layer.fc' not in name:
+            # print('inside',name)
+            module.register_forward_hook(create_hook(name))
+            # module.register_forward_pre_hook(lambda module, input: hook_fn_BN(module, input, layer_name=name, model=model, \
+            #                                          compute_running_mean=compute_running_mean, compute_running_var=compute_running_var))
 
+def hook_fn_BN(module, input,output, model,layer_name = None,compute_running_mean=cfg['compute_running_mean'], compute_running_var=cfg['compute_running_var']):
+    # print(layer_name)
+    # print(input[0].shape)
+    # print(model.running_mean)
+    x = input[0].clone()
+    exponential_average_factor = 0.1
+    if len(input[0].shape)==4:
+        if cfg['compute_running_mean']:
+            mean = x.mean(dim=(0, 2, 3), keepdim=True)
+            var = x.var(dim=(0, 2, 3), unbiased=False, keepdim=True)
+        else:
+            mean = model.running_mean[layer_name]
+            var = custom_var(x,mean,dim=(0, 2, 3))
+    else:
+        if cfg['compute_running_mean']:
+            mean = x.mean(dim=(0,), keepdim=True)
+            var = x.var(dim=(0,), unbiased=False, keepdim=True)
+        else:
+            mean = model.running_mean[layer_name]
+            var = custom_var(x,mean,dim=(0,))
+
+    n = x.numel() / x.size(1)
+    
+    with torch.no_grad():
+        if layer_name in model.running_mean.keys() and layer_name in model.running_var.keys() :
+            if cfg['compute_running_mean']:
+                model.running_mean[layer_name] = exponential_average_factor * mean\
+                + (1 - exponential_average_factor) * model.running_mean[layer_name]
+            else:
+                model.running_mean[layer_name] = mean 
+            # update running_var with unbiased var
+            model.running_var[layer_name]= exponential_average_factor * var * n / (n - 1)\
+                + (1 - exponential_average_factor) *  model.running_var[layer_name]
+        else:
+            if cfg['compute_running_mean']:
+                model.running_mean[layer_name]= exponential_average_factor * mean\
+                    + (1 - exponential_average_factor) * cfg['running_mean']
+            else:
+                model.running_mean[layer_name] = mean 
+            # update running_var with unbiased var
+            model.running_var[layer_name]= exponential_average_factor * var * n / (n - 1)\
+                + (1 - exponential_average_factor) * cfg['running_var']
+    return 
+def custom_var(input_tensor,mean, dim=None, unbiased=True):
+    # n = input_tensor.numel()
+    n = input_tensor.numel() / input_tensor.size(1)
+    mean = mean
+
+    sum_squared_diff = (input_tensor - mean).pow(2).sum(dim=dim)
+
+    if unbiased:
+        # Bessel's correction for unbiased variance
+        variance = sum_squared_diff / (n - 1)
+    else:
+        variance = sum_squared_diff / n
+
+    return variance        
+def hook_fn_BN_(module, input, layer_name, model):
+        x = input.clone()
+        exponential_average_factor = 0.1
+        mean = x.mean(dim=(0, 2, 3), keepdim=True)
+        var = x.var(dim=(0, 2, 3), unbiased=False, keepdim=True)
+        n = x.numel() / x.size(1)
+        with torch.no_grad():
+            if layer_name in model.running_mean.keys():
+                model.running_mean[layer_name] = exponential_average_factor * mean\
+                + (1 - exponential_average_factor) * model.running_mean[layer_name]
+                # update running_var with unbiased var
+                model.running_var[layer_name]= exponential_average_factor * var * n / (n - 1)\
+                    + (1 - exponential_average_factor) *  model.running_var[layer_name]
+            else:
+                model.running_mean[layer_name]= exponential_average_factor * mean\
+                    + (1 - exponential_average_factor) * cfg['running_mean']
+                # update running_var with unbiased var
+                model.running_var[layer_name]= exponential_average_factor * var * n / (n - 1)\
+                    + (1 - exponential_average_factor) * cfg['running_var']        
 def init_param(m):
     if isinstance(m, nn.Conv2d) and isinstance(m, models.DecConv2d):
         nn.init.kaiming_normal_(m.sigma_weight, mode='fan_out', nonlinearity='relu')

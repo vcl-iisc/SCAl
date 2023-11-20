@@ -194,7 +194,7 @@ def runExperiment():
         # result = resume_DA(cfg['model_tag'])
         # result = resume_DA(cfg['model_tag'],load_tag='best')
         # tag_  = '0_dslr_to_amazon_webcam_resnet50_02'
-        tag_ = '2023_dslr_0.03_resnet50_00003_sup-ft-fix'
+        tag_ = '2023_webcam_0.01_resnet50_10_sup-ft-fix'
         # tag_ = '0_dslr_to_amazon_resnet50_01'
         # result = resume_DA(tag_,'checkpoint')
         # result = resume_DA(tag_,'best')
@@ -673,8 +673,8 @@ def train_client_multi(client_dataset_sup, client_dataset_unsup, server, client,
             # print(ACL)
             # ran_CL = set(torch.randperm(cfg['num_clients']).tolist())
             # ran_CL = [ran_CL-set(supervised_clients)]
-            # client_id = random.sample(ACL,num_active_clients)
-            client_id = np.random.choice(ACL,num_active_clients)
+            client_id = random.sample(ACL,num_active_clients)
+            # client_id = np.random.choice(ACL,num_active_clients)
             # client_id = torch.arange(cfg['num_clients'])[torch.randperm(cfg['num_clients'])[:num_active_clients]].tolist()
             for i in range(num_active_clients):
                 client[client_id[i]].active = True
@@ -718,8 +718,8 @@ def train_client_multi(client_dataset_sup, client_dataset_unsup, server, client,
             # print(ACL)
             # ran_CL = set(torch.randperm(cfg['num_clients']).tolist())
             # ran_CL = [ran_CL-set(supervised_clients)]
-            # client_id = random.sample(ACL,num_active_clients)
-            client_id = np.random.choice(ACL,num_active_clients)
+            client_id = random.sample(ACL,num_active_clients)
+            # client_id = np.random.choice(ACL,num_active_clients)
             # print(client_id)
             # client_id = torch.arange(cfg['num_clients'])[torch.randperm(cfg['num_clients'])[:num_active_clients]].tolist()
             for i in range(num_active_clients):

@@ -10,7 +10,7 @@ import numpy as np
 import random
 from config import cfg, process_args
 from data import fetch_dataset, split_dataset, make_data_loader, separate_dataset, separate_dataset_su, \
-    make_batchnorm_dataset_su, make_batchnorm_stats , split_class_dataset
+    make_batchnorm_dataset_su, make_batchnorm_stats , split_class_dataset,BN_stats
 from metrics import Metric
 from modules import Server, Client
 from utils import save, to_device, process_control, process_dataset, make_optimizer, make_scheduler, resume, collate
@@ -20,12 +20,20 @@ cudnn.benchmark = True
 parser = argparse.ArgumentParser(description='cfg')
 for k in cfg:
     exec('parser.add_argument(\'--{0}\', default=cfg[\'{0}\'], type=type(cfg[\'{0}\']))'.format(k))
-parser.add_argument('--control_name', default=None, type=str)
+# print(args['contral_name'])
+# parser.add_argument('--control_name', default=None, type=str)
 args = vars(parser.parse_args())
 process_args(args)
 
 
 def main():
+    # cudnn.benchmark = True
+    # parser = argparse.ArgumentParser(description='cfg')
+    # for k in cfg:
+    #     exec('parser.add_argument(\'--{0}\', default=cfg[\'{0}\'], type=type(cfg[\'{0}\']))'.format(k))
+    # parser.add_argument('--control_name', default=None, type=str)
+    # args = vars(parser.parse_args())
+    # process_args(args)
     process_control()
     seeds = list(range(cfg['init_seed'], cfg['init_seed'] + cfg['num_experiments']))
     for i in range(cfg['num_experiments']):
@@ -40,6 +48,13 @@ def runExperiment():
     cfg['seed'] = int(cfg['model_tag'].split('_')[0])
     torch.manual_seed(cfg['seed'])
     torch.cuda.manual_seed(cfg['seed'])
+    seed_val =  cfg['seed']
+    torch.manual_seed(seed_val)
+    torch.cuda.manual_seed_all(seed_val)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    np.random.seed(seed_val)
+    random.seed(seed_val)
     print(cfg['gm'])
     #server_dataset = fetch_dataset(cfg['data_name'])
     client_dataset = fetch_dataset(cfg['data_name'])
@@ -114,6 +129,10 @@ def runExperiment():
         logger = make_logger(os.path.join('output', 'runs', 'train_{}'.format(cfg['model_tag'])))
     cfg['global']['num_epochs'] = cfg['cycles']  
     mode = cfg['loss_mode']
+    # print(model)
+    # # for name, module in model.named_modules():
+    # #     print(name,module)
+    # exit()
     for epoch in range(last_epoch, cfg['global']['num_epochs'] + 1):
         if mode == 'sim-ft-fix' or mode == 'sup-ft-fix':
             # print('entered fix-mix',epoch)
@@ -136,10 +155,18 @@ def runExperiment():
             # server.update(client)
         #     train_server(server_dataset['train'], server, optimizer, metric, logger, epoch)
         logger.reset()
+        if cfg['with_BN'] == 0:
+            if epoch==cfg['cycles']:
+                cfg['with_BN'] =1
+
         server.update(client)
         scheduler.step()
         model.load_state_dict(server.model_state_dict)
-        test_model = make_batchnorm_stats(batchnorm_dataset, model, 'global')
+        if epoch==cfg['cycles']  and cfg['train_pass']:
+            print('extracting train BN stats')
+            test_model = BN_stats(batchnorm_dataset, model, 'global')
+        else:
+            test_model = make_batchnorm_stats(batchnorm_dataset, model, 'global')
         test(data_loader['test'], test_model, metric, logger, epoch)
         # result = {'cfg': cfg, 'epoch': epoch + 1, 'server': server, 'client': client,
         #           'optimizer_state_dict': optimizer.state_dict(),
@@ -158,7 +185,7 @@ def runExperiment():
         #     metric.update(logger.mean['test/{}'.format(metric.pivot_name)])
         #     shutil.copy('./output/model/{}_checkpoint.pt'.format(cfg['model_tag']),
         #                 './output/model/{}_best.pt'.format(cfg['model_tag']))
-        if epoch%10==0:
+        if epoch%10==0 :#and False:
             print('saving')
             save(result, './output/model/{}_checkpoint.pt'.format(cfg['model_tag']))
             if metric.compare(logger.mean['test/{}'.format(metric.pivot_name)]):
@@ -166,6 +193,74 @@ def runExperiment():
                 shutil.copy('./output/model/{}_checkpoint.pt'.format(cfg['model_tag']),
                             './output/model/{}_best.pt'.format(cfg['model_tag']))
         logger.reset()
+    if cfg['register_hook_BN']:
+        model.load_state_dict(server.model_state_dict)
+        # for k, v in model.state_dict().items():             
+        #     isBatchNorm = True if  '.bn' in k or 'bn4' in k else False
+        #     istype  = True if f'.running_mean'  in k else False 
+        #     # istype  = True if '.running_mean'  in k or '.running_var' in k else False 
+        #     # parameter_type = k.split('.')[-1]
+        #     # # print(f'{k} with parameter type {parameter_type},is batchnorm {isBatchNorm}')
+        #     if isBatchNorm and istype:
+        #         print(k,v)
+        test_model = make_batchnorm_stats(batchnorm_dataset, model, 'global')
+        for epoch in range(2):
+            
+            if epoch==1:
+                get_train_stat(batchnorm_dataset, client_dataset['train'], server, client, supervised_clients, optimizer, metric, logger, epoch,mode='var')
+                server.update_BNstats(client,'var')
+                # for k, v in server.model_state_dict.items():             
+                #     isBatchNorm = True if  '.bn' in k or 'bn4' in k else False
+                #     istype  = True if f'.running_var'  in k else False 
+                #     # istype  = True if '.running_mean'  in k or '.running_var' in k else False 
+                #     # parameter_type = k.split('.')[-1]
+                #     # # print(f'{k} with parameter type {parameter_type},is batchnorm {isBatchNorm}')
+                #     if isBatchNorm and istype:
+                #         print(k,v)
+            else:
+                get_train_stat(batchnorm_dataset, client_dataset['train'], server, client, supervised_clients, optimizer, metric, logger, epoch,mode='mean')
+                server.update_BNstats(client,'mean')
+                # for k, v in server.model_state_dict.items():             
+                #     isBatchNorm = True if  '.bn' in k or 'bn4' in k else False
+                #     istype  = True if f'.running_mean'  in k else False 
+                #     # istype  = True if '.running_mean'  in k or '.running_var' in k else False 
+                #     # parameter_type = k.split('.')[-1]
+                #     # # print(f'{k} with parameter type {parameter_type},is batchnorm {isBatchNorm}')
+                #     if isBatchNorm and istype:
+                #         print(k,v)
+            # print(test_model.state_dict().keys())
+            test_model.load_state_dict(server.model_state_dict)
+            # if epoch==cfg['cycles']  and cfg['train_pass']:
+            #     print('extracting train BN stats')
+            #     test_model = BN_stats(batchnorm_dataset, model, 'global')
+            # else:
+            #     test_model = make_batchnorm_stats(batchnorm_dataset, model, 'global')
+            test(data_loader['test'], test_model, metric, logger, epoch)
+            # result = {'cfg': cfg, 'epoch': epoch + 1, 'server': server, 'client': client,
+            #           'optimizer_state_dict': optimizer.state_dict(),
+            #           'scheduler_state_dict': scheduler.state_dict(),
+            #           'supervised_idx': supervised_idx, 'data_split': data_split, 'logger': logger}
+            # result = {'cfg': cfg, 'epoch': epoch + 1, 'server': server, 'client': client,
+            #           'optimizer_state_dict': optimizer.state_dict(),
+            #           'scheduler_state_dict': scheduler.state_dict(),
+            #           'data_split': data_split, 'logger': logger}
+            result = {'cfg': cfg, 'epoch': epoch + 1, 'server': server, 'client': client,
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'scheduler_state_dict': scheduler.state_dict(),
+                    'data_split': data_split, 'logger': logger,'supervised_clients':supervised_clients }
+            # save(result, './output/model/{}_checkpoint.pt'.format(cfg['model_tag']))
+            # if metric.compare(logger.mean['test/{}'.format(metric.pivot_name)]):
+            #     metric.update(logger.mean['test/{}'.format(metric.pivot_name)])
+            #     shutil.copy('./output/model/{}_checkpoint.pt'.format(cfg['model_tag']),
+            #                 './output/model/{}_best.pt'.format(cfg['model_tag']))
+            if epoch%1==0 and False:
+                print('saving')
+                save(result, './output/model/{}_post_checkpoint.pt'.format(cfg['model_tag']))
+                if metric.compare(logger.mean['test/{}'.format(metric.pivot_name)]):
+                    metric.update(logger.mean['test/{}'.format(metric.pivot_name)])
+                    shutil.copy('./output/model/{}_post_checkpoint.pt'.format(cfg['model_tag']),
+                                './output/model/{}_post_best.pt'.format(cfg['model_tag']))
+            logger.reset()
     return
 
 
@@ -197,8 +292,17 @@ def train_client(batchnorm_dataset, client_dataset, server, client, supervised_c
             for i in range(num_active_clients):
                 client[client_id[i]].active = True
         else:
-            num_active_clients = len(supervised_clients)
-            client_id = supervised_clients
+            if cfg['full_sup'] == 1:
+                print('complete supervised training')
+                num_active_clients = int(np.ceil(cfg['active_rate'] * cfg['num_clients']))
+                
+                ACL = torch.arange(cfg['num_clients']).tolist()
+                client_id = random.sample(ACL,num_active_clients)
+                # print(num_active_clients,ACL,client_id)
+                # exit()
+            else:    
+                num_active_clients = len(supervised_clients)
+                client_id = supervised_clients
             for i in range(num_active_clients):
                 client[client_id[i]].active = True
             # if epoch == cfg['change_epoch']
@@ -314,6 +418,7 @@ def train_client(batchnorm_dataset, client_dataset, server, client, supervised_c
 
         else:
             client[m].active = False
+
         if i % int((num_active_clients * cfg['log_interval']) + 1) == 0:
             _time = (time.time() - start_time) / (i + 1)
             epoch_finished_time = datetime.timedelta(seconds=_time * (num_active_clients - i - 1))
@@ -331,6 +436,34 @@ def train_client(batchnorm_dataset, client_dataset, server, client, supervised_c
     logger.safe(False)
     return
 
+def get_train_stat(batchnorm_dataset, client_dataset, server, client, supervised_clients, optimizer, metric, logger, epoch,mode='mean'):
+    logger.safe(True)
+
+    num_active_clients = cfg['num_clients']
+    ACL = torch.arange(cfg['num_clients']).tolist()
+    client_id = random.sample(ACL,num_active_clients)
+    for i in range(num_active_clients):
+        client[client_id[i]].active = True
+    print(f'getting stats for  the following clients {client_id}')
+    server.distribute(client,batchnorm_dataset)
+    if cfg['kl_loss'] ==1 and epoch==cfg['switch_epoch']:
+        server.distribute_fix_model(client,batchnorm_dataset)
+    num_active_clients = len(client_id)
+    start_time = time.time()
+    lr = optimizer.param_groups[0]['lr']
+    for i in range(num_active_clients):
+        m = client_id[i]
+        # print(type(client[m].data_split['train']))
+        dataset_m = separate_dataset(client_dataset, client[m].data_split['train'])
+        
+        if dataset_m is not None:
+            client[m].active = True
+            client[m].get_stats(dataset_m, metric, logger,mode)
+
+        else:
+            client[m].active = False
+    logger.safe(False)
+    return
 
 def train_server(dataset, server, optimizer, metric, logger, epoch):
     logger.safe(True)

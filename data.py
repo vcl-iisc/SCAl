@@ -449,7 +449,27 @@ def make_batchnorm_stats(dataset, model, tag):
         #     test_model(input)
         # dataset.transform = _transform
     return test_model
-
+def BN_stats(dataset, model, epoch=None):
+    tag = 'global'
+    with torch.no_grad():
+        # test_model = copy.deepcopy(model)
+        test_model = eval('models.{}()'.format(cfg['model_name']))
+        test_model.to(cfg['device'])
+        test_model.load_state_dict(model.state_dict())
+        test_model.apply(lambda m: models.make_batchnorm(m, momentum=0.1, track_running_stats=True))
+        dataset, _transform = make_dataset_normal(dataset)
+        data_loader = make_data_loader({'train': dataset}, tag, shuffle={'train': False})['train']
+        test_model.train(True)
+        for i, input in enumerate(data_loader):
+            input = collate(input)
+            input = to_device(input, cfg['device'])
+            input['loss_mode'] = cfg['loss_mode']
+            input['supervised_mode'] = False
+            input['test'] = True
+            input['batch_size'] = cfg['client']['batch_size']['train']
+            test_model(input)
+        dataset.transform = _transform
+    return test_model
 def make_batchnorm_stats_DA(model, tag):
     with torch.no_grad():
         test_model = eval('models.{}()'.format(cfg['model_name']))

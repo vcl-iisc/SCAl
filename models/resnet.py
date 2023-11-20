@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .utils import init_param, make_batchnorm, loss_fn ,info_nce_loss, SimCLR_Loss,elr_loss, register_act_hooks
+from .utils import init_param, make_batchnorm, loss_fn ,info_nce_loss, SimCLR_Loss,elr_loss, register_act_hooks,register_preBN_hooks
 from utils import to_device, make_optimizer, collate, to_device
 from data import SimDataset 
 # import data.info_nce_loss as info_nce_loss
@@ -13,21 +13,21 @@ class Block(nn.Module):
     def __init__(self, in_planes, planes, stride):
         super(Block, self).__init__()
         # self.n1 = nn.GroupNorm(num_groups=2,num_channels=in_planes)
-        # self.n1 = nn.BatchNorm2d(in_planes)
+        self.bn1 = nn.BatchNorm2d(in_planes)
         self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
         # self.n2 = nn.GroupNorm(num_groups=2,num_channels=planes)
-        # self.n2 = nn.BatchNorm2d(planes)
+        self.bn2 = nn.BatchNorm2d(planes)
         self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)
         if stride != 1 or in_planes != self.expansion * planes:
             self.shortcut = nn.Conv2d(in_planes, self.expansion * planes, kernel_size=1, stride=stride, bias=False)
 
     def forward(self, x):
-        # out = F.relu(self.n1(x))
-        out = F.relu(x)
+        out = F.relu(self.bn1(x))
+        # out = F.relu(x)
         shortcut = self.shortcut(out) if hasattr(self, 'shortcut') else x
         out = self.conv1(out)
-        # out = self.conv2(F.relu(self.n2(out)))
-        out = self.conv2(F.relu(out))
+        out = self.conv2(F.relu(self.bn2(out)))
+        # out = self.conv2(F.relu(out))
         out += shortcut
         return out
 
@@ -110,7 +110,7 @@ class Embedding(nn.Module):
     def __init__(self, feature_dim, embed_dim=256, type="ori"):
     
         super(Embedding, self).__init__()
-        # self.bn = nn.BatchNorm1d(embed_dim, affine=True)
+        self.bn = nn.BatchNorm1d(embed_dim, affine=True)
         # self.bn = torch.nn.GroupNorm(2, embed_dim, affine=True)
         self.relu = nn.ReLU(inplace=True)
         self.dropout = nn.Dropout(p=0.5)
@@ -121,8 +121,8 @@ class Embedding(nn.Module):
     def forward(self, x):
         # print(self.bottleneck,x.shape)
         x = self.bottleneck(x)
-        # if self.type == "bn":
-        #     x = self.bn(x)
+        if self.type == "bn":
+            x = self.bn(x)
         return x 
 class Classifier(nn.Module):
     def __init__(self, embed_dim, class_num, type="linear"):
@@ -143,6 +143,8 @@ class ResNet(nn.Module):
     def __init__(self, data_shape, hidden_size, block, num_blocks, target_size,sim_out=int(128)):
         super().__init__()
         self.act_stats = {}
+        self.running_mean = {}
+        self.running_var = {}
         self.in_planes = hidden_size[0]
         self.backbone_feat_dim = 512
         self.embed_feat_dim  = 256
@@ -153,7 +155,7 @@ class ResNet(nn.Module):
         self.layer3 = self._make_layer(block, hidden_size[2], num_blocks[2], stride=2)
         self.layer4 = self._make_layer(block, hidden_size[3], num_blocks[3], stride=2)
         # self.n4 = nn.GroupNorm(num_groups=2,num_channels=hidden_size[3] * block.expansion)
-        # self.n4 = nn.BatchNorm2d(hidden_size[3] * block.expansion)
+        self.bn4 = nn.BatchNorm2d(hidden_size[3] * block.expansion)
         # self.linear = nn.Linear(hidden_size[3] * block.expansion, target_size)
         self.feat_embed_layer = Embedding(self.backbone_feat_dim, self.embed_feat_dim, type="bn")
         
@@ -189,7 +191,7 @@ class ResNet(nn.Module):
         x = self.layer2(x)
         x = self.layer3(x)
         x = self.layer4(x)
-        # x = F.relu(self.n4(x))
+        x = F.relu(self.bn4(x))
         x = F.relu(x)
         x = F.adaptive_avg_pool2d(x, 1)
         x = x.view(x.size(0), -1)
@@ -398,6 +400,7 @@ class ResNet(nn.Module):
 
 # def resnet9(momentum=None, track=False):
 def resnet9(momentum=None, track=True):
+
     data_shape = cfg['data_shape']
     target_size = cfg['target_size']
     hidden_size = cfg['resnet9']['hidden_size']
@@ -406,12 +409,14 @@ def resnet9(momentum=None, track=True):
     model.apply(lambda m: make_batchnorm(m, momentum=momentum, track_running_stats=track))
 
     ## Register forward hook ##
-    register_act_hooks(model, compute_mean_norm=cfg['compute_mean_norm'], compute_std_dev=cfg['compute_std_dev'])
-
+    # register_act_hooks(model, compute_mean_norm=cfg['compute_mean_norm'], compute_std_dev=cfg['compute_std_dev'])
+    if cfg['register_hook_BN']:
+        register_preBN_hooks(model, compute_running_mean=cfg['compute_running_mean'], compute_running_var=cfg['compute_running_var'])
+    # exit()
     return model
 
 
-def resnet18(momentum=None, track=False):
+def resnet18(momentum=None, track=True):
 # def resnet18(momentum=0.1, track=True):
     data_shape = cfg['data_shape']
     target_size = cfg['target_size']
@@ -419,4 +424,6 @@ def resnet18(momentum=None, track=False):
     model = ResNet(data_shape, hidden_size, Block, [2, 2, 2, 2], target_size)
     model.apply(init_param)
     model.apply(lambda m: make_batchnorm(m, momentum=momentum, track_running_stats=track))
+    if cfg['register_hook_BN']:
+        register_preBN_hooks(model, compute_running_mean=cfg['compute_running_mean'], compute_running_var=cfg['compute_running_var'])
     return model

@@ -43,7 +43,8 @@ def main():
         cfg['data_name'] = cfg['domain_s']
     for i in range(cfg['num_experiments']):
         cfg['domain_tag'] = '_'.join([x for x in cfg['unsup_list'] if x])
-        model_tag_list = [str(seeds[i]), cfg['domain_s'],'to',cfg['domain_tag'], cfg['model_name'],exp_num]
+        # model_tag_list = [str(seeds[i]), cfg['domain_s'],'to',cfg['domain_tag'], cfg['model_name'],exp_num]
+        model_tag_list = [str(seeds[i]),cfg['data_name'],cfg['model_name'],exp_num]
         cfg['model_tag'] = '_'.join([x for x in model_tag_list if x])
         print('Experiment: {}'.format(cfg['model_tag']))
         runExperiment()
@@ -121,7 +122,6 @@ def runExperiment():
         model = torch.nn.DataParallel(model,device_ids = [0, 1])
         model.to(cfg["device"])
     print(model)
-    # exit()
     cfg['local']['lr'] = cfg['var_lr']
     optimizer = make_optimizer(model.parameters(), 'local')
     scheduler = make_scheduler(optimizer, 'global')
@@ -281,9 +281,8 @@ def runExperiment():
             # print(k)
             if 'test_sup' not in k:
                 # print(k)
-                
+                count+=1
                 if 'Accuracy' in k :
-                    count+=1
                     avg_accuracy+=logger.mean[k]
                 elif 'Loss' in k :
                     avg_loss+=logger.mean[k]
@@ -643,7 +642,6 @@ def train_client(client_dataset_sup, client_dataset_unsup, server, client, super
 def train_client_multi(client_dataset_sup, client_dataset_unsup, server, client, supervised_clients, optimizer, metric, logger, epoch,mode):
     logger.safe(True)
     domains=[]
-    print("cfg['loss_mode']:",cfg['loss_mode'])
     if 'ft' in cfg['loss_mode']:
         if epoch <= cfg['switch_epoch']:
             num_active_clients = int(np.ceil(cfg['active_rate'] * cfg['num_clients']))
@@ -660,7 +658,7 @@ def train_client_multi(client_dataset_sup, client_dataset_unsup, server, client,
             server.distribute(client,client_dataset_unsup)
         else:
             
-            #print("client_id:",client_id)
+        
             num_active_clients = len(supervised_clients)
             client_id = supervised_clients
             for i in range(num_active_clients):

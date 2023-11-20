@@ -63,7 +63,16 @@ syn_max_train: 50000
 # Activation-norm/std for each layer
 compute_mean_norm: True
 compute_std_dev: False
+compute_running_mean: True
+compute_running_var: True
 mean_norm_reg: 0.01
 std_dev_reg: 0
+running_mean : 0
+running_var : 0
 wt_actloss : 0.01
 add_fix : 0
+full_sup : 0
+with_BN : 1
+train_pass : 0
+module_name : None
+register_hook_BN : 0
