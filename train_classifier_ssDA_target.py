@@ -15,6 +15,7 @@ from metrics import Metric
 from modules import Server, Client
 from utils import save, to_device, process_control, process_dataset, make_optimizer, make_scheduler, resume, collate,resume_DA,process_dataset_multi
 from logger import make_logger
+import gc
 
 cudnn.benchmark = True
 parser = argparse.ArgumentParser(description='cfg')
@@ -101,7 +102,8 @@ def runExperiment():
     # print(len(client_dataset['train'].data))
     #data_loader = make_data_loader(server_dataset, 'global')
     data_loader_sup = make_data_loader_DA(client_dataset_sup, 'global')
-
+    # print(client_dataset_sup['test'])
+    # exit()
     # data_loader_unsup = make_data_loader_DA(client_dataset_unsup, 'global')
 
     ####
@@ -138,8 +140,10 @@ def runExperiment():
     if cfg['d_mode'] == 'old':
         data_split = split_dataset(client_dataset, cfg['num_clients'], cfg['data_split_mode'])
     elif cfg['d_mode'] == 'new':
-        split_len_sup = int(np.ceil(cfg['active_rate'] * cfg['num_clients']))
-        split_len_unsup = int(cfg['num_clients'])-int(np.ceil(cfg['active_rate'] * cfg['num_clients']))
+        # split_len_sup = int(np.ceil(cfg['active_rate'] * cfg['num_clients']))
+        split_len_sup = int(np.ceil(cfg['num_sup'] * cfg['num_clients']))
+        # split_len_unsup = int(cfg['num_clients'])-int(np.ceil(cfg['active_rate'] * cfg['num_clients']))
+        split_len_unsup = int(cfg['num_clients'])-int(np.ceil(cfg['num_sup'] * cfg['num_clients']))
         #####
         unsup_dom = len(cfg['unsup_list'])
         print('number of unsupervised domains')
@@ -158,7 +162,11 @@ def runExperiment():
         # exit()
         ####
         # print(split_len_sup,split_len_unsup)
-        data_split_sup = split_class_dataset_DA(client_dataset_sup,cfg['data_split_mode'],split_len_sup)
+        print('data len list of sup clients', split_len_sup)
+        if split_len_sup != 0 :
+            data_split_sup = split_class_dataset_DA(client_dataset_sup,cfg['data_split_mode'],split_len_sup)
+        else:
+            data_split_sup = []
         
         # print(len(data_split_sup[1]))
         # data_split_unsup = split_class_dataset_DA(client_dataset_unsup,cfg['data_split_mode'],split_len_unsup)
@@ -194,11 +202,11 @@ def runExperiment():
         # result = resume_DA(cfg['model_tag'])
         # result = resume_DA(cfg['model_tag'],load_tag='best')
         # tag_  = '0_dslr_to_amazon_webcam_resnet50_02'
-        tag_ = '2023_webcam_0.01_resnet50_10_sup-ft-fix'
+        tag_ = '2023_dslr_0.001_resnet50_02_sup-ft-fix'
         # tag_ = '0_dslr_to_amazon_resnet50_01'
         # result = resume_DA(tag_,'checkpoint')
-        # result = resume_DA(tag_,'best')
-        result = resume(tag_,'best')
+        # result = resume(tag_,'best')
+        result = resume(tag_,'checkpoint')
         # import pickle
         # path = "/home/sampathkoti/Downloads/R-50-GN.pkl"
         # # m = pickle.load(open(path, 'rb'))
@@ -252,15 +260,17 @@ def runExperiment():
                 # print('entered fix-mix',epoch)
                 cfg['loss_mode'] = 'alt-fix_'
                 # cfg['loss_mode'] = 'fix-mix'
+        print(cfg['loss_mode'])
         if epoch == 1:
-            model.load_state_dict(server.model_state_dict)
+            # model.load_state_dict(server.model_state_dict)
             #====#
-            test_model.load_state_dict(model.state_dict())
+            test_model.load_state_dict(server.model_state_dict)
             #====#
             test_DA(data_loader_sup['test'], test_model, metric, logger, epoch=0,sup=True)
             for domain_id,data_loader_unsup_ in data_loader_unsup.items():
                 domain = cfg['unsup_list'][domain_id]
                 test_DA(data_loader_unsup_['test'], test_model, metric, logger, epoch=0,domain=domain)
+        # exit()
         # train_client(client_dataset_sup['train'], client_dataset_unsup['train'], server, client, supervised_clients, optimizer, metric, logger, epoch,mode)
         train_client_multi(client_dataset_sup['train'], client_dataset_unsup, server, client, supervised_clients, optimizer, metric, logger, epoch,mode)
         # train_client_multi(client_dataset_sup['train'], client_dataset_unsup, server, client, supervised_clients, optimizer, metric, logger, epoch,mode,scheduler)
@@ -273,17 +283,22 @@ def runExperiment():
             # server.update(client)
         #     train_server(server_dataset['train'], server, optimizer, metric, logger, epoch)
         logger.reset()
+
+        if cfg['with_BN'] == 0:
+            if epoch==cfg['cycles']:
+                cfg['with_BN'] =1
+
         server.update(client)
         scheduler.step()
 
-        model.load_state_dict(server.model_state_dict)
+        # model.load_state_dict(server.model_state_dict)
         # print(model)
         #needs to be removed for final clean up
         # print(server.model_state_dict.keys())
         # test_model = make_batchnorm_stats(client_dataset_sup['train'],model, 'global')
         # print(cfg)
         #====#
-        test_model.load_state_dict(model.state_dict())
+        test_model.load_state_dict(server.model_state_dict)
         #====#
         
         test_DA(data_loader_sup['test'], test_model, metric, logger, epoch,sup=True)
@@ -366,6 +381,72 @@ def runExperiment():
                     shutil.copy('./output/model/target/{}_checkpoint.pt'.format(cfg['model_tag']),
                                 './output/model/target/{}_best.pt'.format(cfg['model_tag']))
         logger.reset()
+        gc.collect()
+        torch.cuda.empty_cache()
+    if cfg['register_hook_BN']:
+        test_model.load_state_dict(server.model_state_dict)
+        cfg['post_conv'] = 1
+        for epoch in range(2):
+            
+            if epoch==1:
+                get_train_stat_DA(client_dataset_sup, client_dataset_unsup, server, client, supervised_clients, optimizer, metric, logger, epoch,mode='var')
+                server.update_BNstats(client,'var')
+                # for k, v in server.model_state_dict.items():             
+                #     isBatchNorm = True if  '.bn' in k or 'bn4' in k else False
+                #     istype  = True if f'.running_var'  in k else False 
+                #     # istype  = True if '.running_mean'  in k or '.running_var' in k else False 
+                #     # parameter_type = k.split('.')[-1]
+                #     # # print(f'{k} with parameter type {parameter_type},is batchnorm {isBatchNorm}')
+                #     if isBatchNorm and istype:
+                #         print(k,v)
+            else:
+                get_train_stat_DA(client_dataset_sup, client_dataset_unsup,server, client, supervised_clients, optimizer, metric, logger, epoch,mode='mean')
+                server.update_BNstats(client,'mean')
+                # for k, v in server.model_state_dict.items():             
+                #     isBatchNorm = True if  '.bn' in k or 'bn4' in k else False
+                #     istype  = True if f'.running_mean'  in k else False 
+                #     # istype  = True if '.running_mean'  in k or '.running_var' in k else False 
+                #     # parameter_type = k.split('.')[-1]
+                #     # # print(f'{k} with parameter type {parameter_type},is batchnorm {isBatchNorm}')
+                #     if isBatchNorm and istype:
+                #         print(k,v)
+            # print(test_model.state_dict().keys())
+            test_model.load_state_dict(server.model_state_dict)
+            # if epoch==cfg['cycles']  and cfg['train_pass']:
+            #     print('extracting train BN stats')
+            #     test_model = BN_stats(batchnorm_dataset, model, 'global')
+            # else:
+            #     test_model = make_batchnorm_stats(batchnorm_dataset, model, 'global')
+            # test(data_loader['test'], test_model, metric, logger, epoch)
+            test_DA(data_loader_sup['test'], test_model, metric, logger, epoch,sup=True)
+            for domain_id,data_loader_unsup_ in data_loader_unsup.items():
+                domain = cfg['unsup_list'][domain_id]
+                test_DA(data_loader_unsup_['test'], test_model, metric, logger, epoch,domain=domain)
+            # result = {'cfg': cfg, 'epoch': epoch + 1, 'server': server, 'client': client,
+            #           'optimizer_state_dict': optimizer.state_dict(),
+            #           'scheduler_state_dict': scheduler.state_dict(),
+            #           'supervised_idx': supervised_idx, 'data_split': data_split, 'logger': logger}
+            # result = {'cfg': cfg, 'epoch': epoch + 1, 'server': server, 'client': client,
+            #           'optimizer_state_dict': optimizer.state_dict(),
+            #           'scheduler_state_dict': scheduler.state_dict(),
+            #           'data_split': data_split, 'logger': logger}
+            result = {'cfg': cfg, 'epoch': epoch + 1, 'server': server, 'client': client,
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict(),
+                'data_split_sup': data_split_sup,'data_split_unsup' : data_split_unsup, 'logger': logger,'supervised_clients':supervised_clients,'split_len' : split_len }
+            # save(result, './output/model/{}_checkpoint.pt'.format(cfg['model_tag']))
+            # if metric.compare(logger.mean['test/{}'.format(metric.pivot_name)]):
+            #     metric.update(logger.mean['test/{}'.format(metric.pivot_name)])
+            #     shutil.copy('./output/model/{}_checkpoint.pt'.format(cfg['model_tag']),
+            #                 './output/model/{}_best.pt'.format(cfg['model_tag']))
+            if epoch%1==0 and False:
+                print('saving')
+                save(result, './output/model/{}_post_checkpoint.pt'.format(cfg['model_tag']))
+                if metric.compare(logger.mean['test/{}'.format(metric.pivot_name)]):
+                    metric.update(logger.mean['test/{}'.format(metric.pivot_name)])
+                    shutil.copy('./output/model/{}_post_checkpoint.pt'.format(cfg['model_tag']),
+                                './output/model/{}_post_best.pt'.format(cfg['model_tag']))
+            logger.reset()
     return
 
 
@@ -393,7 +474,8 @@ def make_client_DA(model, data_split_sup,data_split_unsup,split_len=None):
     for m in range(len(client)):
         client[m] = Client(client_id[m], model)
         # , {'train': data_split['train'][m], 'test': data_split['test'][m]}
-    num_supervised_clients = int(np.ceil(cfg['active_rate'] * cfg['num_clients']))
+    # num_supervised_clients = int(np.ceil(cfg['active_rate'] * cfg['num_clients']))
+    num_supervised_clients = int(np.ceil(cfg['num_sup'] * cfg['num_clients']))
     client_id = torch.arange(cfg['num_clients'])[torch.randperm(cfg['num_clients'])[:num_supervised_clients]].tolist()
     unsup_client_id = list(set(range(cfg['num_clients']))-set(client_id))
     # print(len(unsup_client_id))
@@ -432,7 +514,53 @@ def make_client_DA(model, data_split_sup,data_split_unsup,split_len=None):
     # exit()
     return client , client_id
 
+def get_train_stat_DA(client_dataset_sup, client_dataset_unsup, server, client, supervised_clients, optimizer, metric, logger, epoch,mode='mean'):
+    logger.safe(True)
 
+    num_active_clients = cfg['num_clients']
+    ACL = torch.arange(cfg['num_clients']).tolist()
+    client_id = random.sample(ACL,num_active_clients)
+    print(client_id,supervised_clients)
+    client_id = list(set(client_id)-set(supervised_clients))
+    print(client_id)
+    num_active_clients = len(client_id)
+    for i in range(num_active_clients):
+        # if client[client_id[i]].supervised:
+        #     continue
+        client[client_id[i]].active = True
+    print(f'getting stats for  the following clients {client_id}')
+    server.distribute(client,client_dataset_unsup)
+    if cfg['kl_loss'] ==1 and epoch==cfg['switch_epoch']:
+        server.distribute(client,client_dataset_unsup)
+    num_active_clients = len(client_id)
+    start_time = time.time()
+    lr = optimizer.param_groups[0]['lr']
+    for i in range(num_active_clients):
+        
+
+        m = client_id[i]
+        # if client[m].supervised:
+        #     continue
+        # print(m)
+        # print(type(client[m].data_split['train']))
+        if client[m].supervised ==  True:
+            dataset_m = separate_dataset_DA(client_dataset_sup, client[m].data_split['train'],cfg['data_name'])
+        elif client[m].supervised ==  False:
+            #print('entered false')
+            domain_id = client[m].domain_id
+            # print(client_dataset_unsup.keys())
+
+            print('datasplit_len',len(client[m].data_split['train']))
+            dataset_m = separate_dataset_DA(client_dataset_unsup[domain_id]['train'], client[m].data_split['train'],cfg['data_name_unsup'])
+        
+        if dataset_m is not None:
+            client[m].active = True
+            client[m].get_stats(dataset_m, metric, logger,mode)
+
+        else:
+            client[m].active = False
+    logger.safe(False)
+    return
 def train_client(client_dataset_sup, client_dataset_unsup, server, client, supervised_clients, optimizer, metric, logger, epoch,mode):
     logger.safe(True)
     if 'ft' in cfg['loss_mode']:
@@ -850,6 +978,8 @@ def train_client_multi(client_dataset_sup, client_dataset_unsup, server, client,
             logger.append(info, 'train', mean=False)
             print(logger.write('train', metric.metric_name['train']))
     logger.safe(False)
+    gc.collect()
+    torch.cuda.empty_cache()
     return
 
 def train_server(dataset, server, optimizer, metric, logger, epoch):
@@ -973,6 +1103,8 @@ def test_DA(data_loader, model, metric, logger, epoch,sup=False,domain=None):
                 #     print(logger.write(tag, metric.metric_name['test']))
 
     logger.safe(False)
+    gc.collect()
+    torch.cuda.empty_cache()
     return
 
 if __name__ == "__main__":

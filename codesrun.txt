@@ -225,3 +225,12 @@ python train_classifier_ssDA_target.py --domain_s 'amazon' --unsup_doms 'dslr-we
 python train_classifier_ssDA_target.py --domain_s 'amazon' --unsup_doms 'dslr-webcam'  --model_name resnet50 --d_mode new --device cuda:0 --var_lr 0.01  --scheduler_name  'ExponentialLR' --cycles 200  --control_name "01_sup-ft-fix_15_0.3_iid_5-5_0.07_1" --resume_mode 1  --init_seed 2023
 
 ython train_classifier_ssFT.py --data_name CIFAR10 --model_name resnet9 --d_mode new --device cuda:0  --cycles 1  --switch_epoch_pred 1  --control_name "1001_sup-ft_100_0.1_iid_5-5_0.07_1" --full_sup 1 --var_lr 0.01 --resume_mode  1
+bn running mean and varience experiments
+python train_classifier_ssFT.py --data_name CIFAR100 --model_name resnet18 --d_mode new --device cuda:1  --cycles 500 --switch_epoch_pred 500  --control_name "1003_sup-ft_100_0.1_iid_5-5_0.07_1" --full_sup 1 --var_lr 0.03 --resume_mode 1 --train_pass 0 --register_hook_BN 1
+python train_classifier_ssFT.py --data_name CIFAR100 --model_name resnet18 --d_mode new --device cuda:1 --cycles 500 --switch_epoch_pred 500  --control_name "10003_sup-ft_100_0.1_iid_5-5_0.07_1" --full_sup 1 --with_BN 0 --var_lr 0.03 --resume_mode 1 --train_pass 0 --register_hook_BN 1
+
+
+python train_classifier_ssFT.py --data_name CIFAR100 --model_name resnet9 --d_mode new --device cuda:0 --cycles 500 --switch_epoch_pred 500  --control_name "0003_sup-ft_100_0.1_iid_5-5_0.07_1" --full_sup 1 --with_BN 0 --var_lr 0.03
+python train_classifier_ssFT.py --data_name CIFAR100 --model_name resnet9 --d_mode new --device cuda:0 --cycles 500 --switch_epoch_pred 500  --control_name "0001_sup-ft_100_0.1_iid_5-5_0.07_1" --full_sup 1 --with_BN 0 --var_lr 0.01
+python train_classifier_ssFT.py --data_name CIFAR100 --model_name resnet9 --d_mode new --device cuda:0 --cycles 500 --switch_epoch_pred 500  --control_name "001_sup-ft_100_0.1_iid_5-5_0.07_1" --full_sup 1 --with_BN 0 --resume_mode 1
+

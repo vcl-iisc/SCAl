@@ -81,8 +81,9 @@ def fetch_dataset(data_name,domain = None):
                                 # transforms.Normalize(*data_stats[data_name])
                                 # # transforms.RandomResizedCrop(224)
                                 ResizeImage(resize_size),
-                                transforms.RandomResizedCrop(crop_size),
-                                transforms.RandomHorizontalFlip(),
+                                # transforms.RandomResizedCrop(crop_size),
+                                # transforms.RandomHorizontalFlip(),
+                                transforms.CenterCrop(crop_size),
                                 transforms.ToTensor(),
                                 transforms.Normalize(*data_stats[data_name])
                                 ]
@@ -424,7 +425,15 @@ def make_batchnorm_dataset_su(server_dataset, client_dataset):
 def make_dataset_normal(dataset):
     import datasets
     _transform = dataset.transform
-    transform = datasets.Compose([transforms.Grayscale(num_output_channels=3),transforms.ToTensor(), transforms.Normalize(*data_stats[cfg['data_name']])])
+    # transform = datasets.Compose([transforms.Grayscale(num_output_channels=3),transforms.ToTensor(), transforms.Normalize(*data_stats[cfg['data_name']])])
+    transform  = datasets.Compose(
+                                [
+
+                                ResizeImage(224),
+                                # transforms.CenterCrop(crop_size),
+                                transforms.ToTensor(),
+                                transforms.Normalize(*data_stats[cfg['data_name']])
+                                ])
     dataset.transform = transform
     return dataset, _transform
 
@@ -598,6 +607,7 @@ class FixTransform(object):
                                 # transforms.Normalize(*data_stats[data_name])
                                 # # transforms.RandomResizedCrop(224)
                                 ResizeImage(resize_size),
+                                # transforms.CenterCrop(crop_size),
         transforms.RandomResizedCrop(crop_size),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),

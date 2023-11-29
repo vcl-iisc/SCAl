@@ -17,6 +17,7 @@ from net_utils import set_random_seed
 from net_utils import init_multi_cent_psd_label,init_psd_label_shot_icml
 from net_utils import EMA_update_multi_feat_cent_with_feat_simi,get_final_centroids
 from data import make_dataset_normal
+import gc
 class Server:
     def __init__(self, model):
         self.model_state_dict = save_model_state_dict(model.state_dict())
@@ -139,6 +140,10 @@ class Server:
                     global_optimizer.load_state_dict(self.global_optimizer_state_dict)
                     global_optimizer.zero_grad()
                     weight = torch.ones(len(valid_client))
+                    # weight = weight / weight.sum()
+                    for i in range(len(valid_client)):
+                        weight[i] = valid_client[i].data_len
+                    # print(weight.sum())
                     weight = weight / weight.sum()
 
                     # # Store the averaged batchnorm parameters
@@ -183,6 +188,10 @@ class Server:
                     global_optimizer.load_state_dict(self.global_optimizer_state_dict)
                     global_optimizer.zero_grad()
                     weight = torch.ones(len(valid_client))
+                    # weight = weight / weight.sum()
+                    for i in range(len(valid_client)):
+                        weight[i] = valid_client[i].data_len
+                # print(weight.sum())
                     weight = weight / weight.sum()
 
                     # # Store the averaged batchnorm parameters
@@ -219,6 +228,10 @@ class Server:
                     global_optimizer.load_state_dict(self.global_optimizer_state_dict)
                     global_optimizer.zero_grad()
                     weight = torch.ones(len(valid_client))
+                    # weight = weight / weight.sum()
+                    for i in range(len(valid_client)):
+                        weight[i] = valid_client[i].data_len
+                    # print(weight.sum())
                     weight = weight / weight.sum()
                     for k, v in model.named_parameters():
                         # print(k)
@@ -246,6 +259,10 @@ class Server:
                     global_optimizer.load_state_dict(self.global_optimizer_state_dict)
                     global_optimizer.zero_grad()
                     weight = torch.ones(len(valid_client))
+                    # weight = weight / weight.sum()
+                    for i in range(len(valid_client)):
+                        weight[i] = valid_client[i].data_len
+                    # print(weight.sum())
                     weight = weight / weight.sum()
                     for k, v in model.named_parameters():
                         parameter_type = k.split('.')[-1]
@@ -709,6 +726,7 @@ class Client:
             self.optimizer_state_dict['param_groups'][0]['lr'] = lr
             optimizer = make_optimizer(model.parameters(), 'local')
             optimizer.load_state_dict(self.optimizer_state_dict)
+            self.data_len = len(dataset)
             model.train(True)
             # if cfg['world_size']==1:
             #     model.projection.requires_grad_(False)
@@ -750,6 +768,7 @@ class Client:
             self.optimizer_state_dict['param_groups'][0]['lr'] = lr
             optimizer = make_optimizer(model.parameters(), 'local')
             optimizer.load_state_dict(self.optimizer_state_dict)
+            self.data_len = len(dataset)
             model.train(True)
             if cfg['world_size']==1:
                 if self.supervised == False:
@@ -792,6 +811,7 @@ class Client:
             self.optimizer_state_dict['param_groups'][0]['lr'] = lr
             optimizer = make_optimizer(model.parameters(), 'local')
             optimizer.load_state_dict(self.optimizer_state_dict)
+            self.data_len = len(fix_dataset)
             model.train(True)
             if cfg['client']['num_epochs'] == 1:
                 num_batches = int(np.ceil(len(fix_data_loader) * float(cfg['local_epoch'][0])))
@@ -824,6 +844,7 @@ class Client:
             self.optimizer_state_dict['param_groups'][0]['lr'] = lr
             optimizer = make_optimizer(model.parameters(), 'local')
             optimizer.load_state_dict(self.optimizer_state_dict)
+            self.data_len = len(fix_dataset)
             model.train(True)
             if cfg['client']['num_epochs'] == 1:
                 num_batches = int(np.ceil(len(fix_data_loader) * float(cfg['local_epoch'][0])))
@@ -854,6 +875,7 @@ class Client:
             data_loader = make_data_loader({'train': dataset}, 'client')['train']
             model = eval('models.{}().to(cfg["device"])'.format(cfg['model_name']))
             model.load_state_dict(self.model_state_dict, strict=False)
+            self.data_len = len(dataset)
             self.optimizer_state_dict['param_groups'][0]['lr'] = lr
             if 'fmatch' in cfg['loss_mode']:
                 optimizer = make_optimizer(model.make_phi_parameters(), 'local')
@@ -909,8 +931,10 @@ class Client:
             test_model = eval('models.{}()'.format(cfg['model_name']))
             test_model.to(cfg['device'])
             test_model.load_state_dict(self.model_state_dict)
-            
+            # print(dataset)
             dataset, _transform = make_dataset_normal(dataset)
+            # print(dataset)
+            # exit()
             data_loader = make_data_loader({'train': dataset}, tag, shuffle={'train': False})['train']
             if mode =='mean':
                 test_model.apply(lambda m: models.make_batchnorm(m, momentum=0.1, track_running_stats=True))
@@ -934,7 +958,11 @@ class Client:
                 input['loss_mode'] = cfg['loss_mode']
                 input['supervised_mode'] = False
                 input['test'] = True
+                # print(input['batch_size'])
+                if input['data'].shape[0]==1:
+                    break
                 input['batch_size'] = cfg['client']['batch_size']['train']
+                
                 test_model(input)
             if mode == 'mean':
                 self.running_mean = test_model.running_mean
@@ -981,6 +1009,7 @@ class Client:
             self.optimizer_state_dict['param_groups'][0]['lr'] = lr
             optimizer = make_optimizer(model.parameters(), 'local')
             optimizer.load_state_dict(self.optimizer_state_dict)
+            self.data_len = len(dataset)
             model.train(True)
             # if cfg['world_size']==1:
             #     model.projection.requires_grad_(False)
@@ -1029,6 +1058,7 @@ class Client:
             self.optimizer_state_dict['param_groups'][0]['lr'] = lr
             optimizer = make_optimizer(model.parameters(), 'local')
             optimizer.load_state_dict(self.optimizer_state_dict)
+            self.data_len = len(dataset)
             model.train(True)
             g_epoch = epoch
             # for v,k in model.named_parameters():
@@ -1119,6 +1149,7 @@ class Client:
             self.optimizer_state_dict['param_groups'][0]['lr'] = lr
             optimizer = make_optimizer(model.parameters(), 'local')
             optimizer.load_state_dict(self.optimizer_state_dict)
+            self.data_len = len(fix_dataset)
             model.train(True)
             if cfg['world_size']==1:
                 model.projection.requires_grad_(False)
@@ -1161,6 +1192,7 @@ class Client:
             train_data_loader = make_data_loader({'train': dataset}, 'client')['train']
             test_data_loader = make_data_loader({'train': dataset},'client',batch_size = {'train':50},shuffle={'train':False})['train']
             # model = eval('models.{}().to(cfg["device"])'.format(cfg['model_name']))
+            self.data_len = len(dataset)
             if cfg['world_size']==1:
                 model = eval('models.{}().to(cfg["device"])'.format(cfg['model_name']))
             elif cfg['world_size']>1:
@@ -1197,7 +1229,7 @@ class Client:
 
                 optimizer_ = make_optimizer(param_group_, 'local')
                 optimizer = op_copy(optimizer_)
-
+                del optimizer_
             # # elif cfg['model_name']=='resnet9':
             # #     cfg['local']['lr'] = lr
             # #     # print(model)
@@ -1269,7 +1301,7 @@ class Client:
             model = eval('models.{}().to(cfg["device"])'.format(cfg['model_name']))
             # model.load_state_dict(self.model_state_dict, strict=False)
             model.load_state_dict(self.model_state_dict, strict=False)
-            
+            self.data_len = len(fix_dataset)
             self.optimizer_state_dict['param_groups'][0]['lr'] = lr
             optimizer = make_optimizer(model.parameters(), 'local')
             optimizer.load_state_dict(self.optimizer_state_dict)
@@ -1366,6 +1398,11 @@ class Client:
             raise ValueError('Not valid client loss mode')
         self.optimizer_state_dict = save_optimizer_state_dict(optimizer.state_dict())
         self.model_state_dict = save_model_state_dict(model.state_dict())
+        del optimizer
+        # del optimizer_
+        del model
+        gc.collect()
+        torch.cuda.empty_cache()
         # self.model_state_dict = save_model_state_dict(model.module.state_dict() if cfg['world_size'] > 1 else model.state_dict())
         return
 

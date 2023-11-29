@@ -307,6 +307,7 @@ def resume(model_tag, load_tag='checkpoint', verbose=True):
         print('Resume from {}'.format(result['epoch']))
     return result
 def resume_DA(model_tag, load_tag='checkpoint',mode = 'source', verbose=True):
+    
 # def resume(model_tag, load_tag='best', verbose=True):
     if os.path.exists('./output/model/{}/{}_{}.pt'.format(mode,model_tag, load_tag)):
         result = load('./output/model/{}/{}_{}.pt'.format(mode,model_tag, load_tag))
