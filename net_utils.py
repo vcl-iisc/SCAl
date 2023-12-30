@@ -70,11 +70,11 @@ def init_multi_cent_psd_label(model, dataloader, flag=False, flag_NRC=False, con
     # current VISDA-C k_seg is set to 3
     # topk_num = max(all_emd_feat.shape[0] // (args.class_num * args.topk_seg), 1)
     # print(all_emd_feat.shape[0])
-    print('target',cfg['target_size'],all_emd_feat.shape[0])
-    topk_num = max(all_emd_feat.shape[0] // (cfg['target_size'] *2), 1)
+    # print('target',cfg['target_size'],all_emd_feat.shape[0])
+    # topk_num = max(all_emd_feat.shape[0] // (cfg['target_size'] *2), 1)
     # topk_num = max(all_emd_feat.shape[0] // (cfg['target_size'] * 20), 1)
-    # topk_num = 3
-    print(topk_num)
+    topk_num = 3
+    # print('topk num',topk_num)
     all_cls_out = torch.cat(cls_out_stack, dim=0)
     _, all_psd_label = torch.max(all_cls_out, dim=1)
     acc = torch.sum(all_gt_label == all_psd_label) / len(all_gt_label)
@@ -120,7 +120,7 @@ def init_multi_cent_psd_label(model, dataloader, flag=False, flag_NRC=False, con
         # print(all_psd_label)
         acc = torch.sum(all_psd_label == all_gt_label) / len(all_gt_label)
         acc_list.append(acc)
-        print(acc_list)
+        # print(acc_list)
     # log = "acc:" + " --> ".join("{:.3f}".format(acc) for acc in acc_list)
     # psd_confu_mat = confusion_matrix(all_gt_label.cpu(), all_psd_label.cpu())
     # psd_acc_list = psd_confu_mat.diagonal()/psd_confu_mat.sum(axis=1) * 100

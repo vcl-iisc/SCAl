@@ -888,9 +888,10 @@ class FixTransform(object):
         # print(input['data'])
         # exit()
         data = self.normal(input['data'])
-        augw = self.weak(input['data'])
-        augs = self.strong(input['data'])
-        input = {**input, 'data': data, 'augw': augw, 'augs': augs}
+        # augw = self.weak(input['data'])
+        # augs = self.strong(input['data'])
+        # input = {**input, 'data': data, 'augw': augw, 'augs': augs}
+        input = {**input, 'data': data, 'augw': data, 'augs': data}
         # input = {**input, 'data': data, 'augw': augw}
         # print(data.shape,augw.shape)
         # exit()
