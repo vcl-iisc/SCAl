@@ -1550,10 +1550,10 @@ def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg_
         model.eval()
         glob_multi_feat_cent, all_psd_label ,all_emd_feat= init_multi_cent_psd_label(model,test_data_loader)
         #init_psd_label_shot_icml(model,test_data_loader)
-        mean_p = torch.mean(all_emd_feat,axis = 0)
-        std_p = torch.std(all_emd_feat,axis = 0)
-        epsi = 1e-8
-        kl_loss = torch.mean(-torch.log(std_p+epsi)+torch.square(std_p)+torch.square(mean_p)-0.5)
+        # mean_p = torch.mean(all_emd_feat,axis = 0)
+        # std_p = torch.std(all_emd_feat,axis = 0)
+        # epsi = 1e-8
+        # kl_loss = torch.mean(-torch.log(std_p+epsi)+torch.square(std_p)+torch.square(mean_p)-0.5)
     model.train()
     epoch_idx=epoch
     for i, input in enumerate(train_data_loader):
@@ -1663,30 +1663,46 @@ def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg_
             
         if cfg['avg_cent'] and avg_cent is not None:
         #if True:    
-            # cent_loss = torch.nn.MSELoss()
-            # cent_mse = cent_loss(cent.squeeze(),avg_cent.squeeze())
-            # # print('centroid_loss',cent_mse)
-            # loss+=cfg['gamma']*cent_mse
-            cent_batch = torch.matmul(torch.transpose(psd_label,0,1), embed_feat)
-            #print("clnt_cent:",cent_batch)
-            cent_batch = cent_batch / (1e-9 + psd_label.sum(axis=0)[:,None])
-            server_cent = torch.squeeze(torch.Tensor(avg_cent.cpu()))
-            #print("server_cent:",server_cent.shape)
-            clnt_cent = cent_batch[unique_labels]/torch.norm(cent_batch[unique_labels],dim=1,keepdim=True)
-            server_cent = server_cent/torch.norm(server_cent,dim=1,keepdim=True)
-            server_cent = server_cent.to(cfg['device'])
-            server_cent = torch.transpose(server_cent,0,1)
-            #print("server_cent:",server_cent.shape)
-            #print("clnt_cent:",clnt_cent.shape)
-            #server_cent = (server_cent, cfg['device'])
+            if cfg['loss_mse'] == 1:
+                cent = EMA_update_multi_feat_cent_with_feat_simi(glob_multi_feat_cent, embed_feat, decay=0.9999)
+                cent_loss = torch.nn.MSELoss()
+                cent_mse = cent_loss(cent.squeeze(),avg_cent.squeeze())
+                # print('centroid_loss',cent_mse)
+                # print(loss)
+                # exit()
+                loss+=cfg['gamma']*1000*cent_mse
+            else:
+                # cent_batch = torch.matmul(torch.transpose(psd_label,0,1), embed_feat)
+                # #print("clnt_cent:",cent_batch)
+                # cent_batch = cent_batch / (1e-9 + psd_label.sum(axis=0)[:,None])
+                # server_cent = torch.squeeze(torch.Tensor(avg_cent.cpu()))
+                # #print("server_cent:",server_cent.shape)
+                # clnt_cent = cent_batch[unique_labels]/torch.norm(cent_batch[unique_labels],dim=1,keepdim=True)
+                # server_cent = server_cent/torch.norm(server_cent,dim=1,keepdim=True)
+                # server_cent = server_cent.to(cfg['device'])
+                # server_cent = torch.transpose(server_cent,0,1)
+                
+                # #server_cent = (server_cent, cfg['device'])
+                
+                server_cent = torch.squeeze(torch.Tensor(avg_cent.cpu()))
+                server_cent = server_cent/torch.norm(server_cent,dim=1,keepdim=True)
+                server_cent = torch.transpose(server_cent,0,1)
+                clnt_cent = EMA_update_multi_feat_cent_with_feat_simi(glob_multi_feat_cent, embed_feat, decay=0.9999)
+                clnt_cent = torch.squeeze(clnt_cent)
+                # print("server_cent:",server_cent.shape)
+                # print("clnt_cent:",clnt_cent.shape)
 
-            similarity_mat = torch.matmul(clnt_cent,server_cent)
-            temp = 8.0
-            similarity_mat = torch.exp(similarity_mat/temp)
-            pos_m = torch.diag(similarity_mat)
-            pos_neg_m = torch.sum(similarity_mat,axis = 1)
-            nce_loss = -1.0*torch.sum(torch.log(pos_m/pos_neg_m))
-            loss += cfg['gamma']*nce_loss
+                similarity_mat = torch.matmul(clnt_cent.cpu(),server_cent)
+                temp = cfg['temp']
+                similarity_mat = torch.exp(similarity_mat/temp)
+                # print(similarity_mat)
+                pos_m = torch.diag(similarity_mat)
+                pos_neg_m = torch.sum(similarity_mat,axis = 1)
+                # nce_loss = -1.0*torch.sum(torch.log(pos_m/pos_neg_m))
+                nce_loss = -1.0*torch.mean(torch.log(pos_m/pos_neg_m))
+                # print(nce_loss)
+                # exit()
+                loss += cfg['gamma']*nce_loss
 
 
         if cfg['kl'] == 1:
@@ -1710,7 +1726,7 @@ def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg_
 
         optimizer.zero_grad()
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
         optimizer.step()
         with torch.no_grad():
             loss_stack.append(loss.cpu().item())

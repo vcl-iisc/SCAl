@@ -238,8 +238,8 @@ def runExperiment():
         tag_ = cfg['tag_']
         # tag_ = '0_dslr_to_amazon_resnet50_01'
         # result = resume_DA(tag_,'checkpoingt')
-        result = resume(tag_,'best')
-        # result = resume(tag_,'checkpoint')
+        # result = resume(tag_,'best')
+        result = resume(tag_,'checkpoint')
         # import pickle
         # path = "/home/sampathkoti/Downloads/R-50-GN.pkl"
         # # m = pickle.load(open(path, 'rb'))
@@ -295,21 +295,21 @@ def runExperiment():
                 cfg['loss_mode'] = 'alt-fix_'
                 # cfg['loss_mode'] = 'fix-mix'
         print(cfg['loss_mode'])
-        if epoch == 1:
+        # if epoch == 1:
 
-            # model.load_state_dict(server.model_state_dict)
-            #====#
-            test_model.load_state_dict(server.model_state_dict)
-            # print(test_model.feat_embed_layer.state_dict())
-            # exit()
-            #====#
-            test_DA(data_loader_sup['test'], test_model, metric, logger, epoch=0,sup=True)
-            for domain_id,data_loader_unsup_ in data_loader_unsup.items():
-                # print(data_loader_unsup_)
-                domain = cfg['unsup_list'][domain_id]
-                print(domain,domain_id)
-                test_DA(data_loader_unsup_['test'], test_model, metric, logger, epoch=0,domain=domain)
-        exit()
+        #     # model.load_state_dict(server.model_state_dict)
+        #     #====#
+        #     test_model.load_state_dict(server.model_state_dict)
+        #     # print(test_model.feat_embed_layer.state_dict())
+        #     # exit()
+        #     #====#
+        #     test_DA(data_loader_sup['test'], test_model, metric, logger, epoch=0,sup=True)
+        #     for domain_id,data_loader_unsup_ in data_loader_unsup.items():
+        #         # print(data_loader_unsup_)
+        #         domain = cfg['unsup_list'][domain_id]
+        #         print(domain,domain_id)
+        #         test_DA(data_loader_unsup_['test'], test_model, metric, logger, epoch=0,domain=domain)
+        # exit()
         # train_client(client_dataset_sup['train'], client_dataset_unsup['train'], server, client, supervised_clients, optimizer, metric, logger, epoch,mode)
         train_client_multi(client_dataset_sup['train'], client_dataset_unsup, server, client, supervised_clients, optimizer, metric, logger, epoch,mode)
         # train_client_multi(client_dataset_sup['train'], client_dataset_unsup, server, client, supervised_clients, optimizer, metric, logger, epoch,mode,scheduler)

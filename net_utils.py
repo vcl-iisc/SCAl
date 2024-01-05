@@ -288,7 +288,7 @@ def EMA_update_multi_feat_cent_with_feat_simi(glob_multi_feat_cent, embed_feat, 
     curr_multi_feat_cent /= (torch.sum(feat_simi, dim=0).unsqueeze(2) + 1e-8)
     if decay > 0:
     	glob_multi_feat_cent = glob_multi_feat_cent * decay + (1 - decay) * curr_multi_feat_cent
-    else:
+    else :
         glob_multi_feat_cent = curr_multi_feat_cent
 
 

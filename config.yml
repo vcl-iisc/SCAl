@@ -83,3 +83,4 @@ temp : 8
 wt_avg : 1
 pretrained_source : 0
 tag_ : None
+loss_mse : 0

@@ -1,5 +1,5 @@
 import os
-
+from config import cfg
 import anytree
 import torch
 import numpy as np
@@ -10,6 +10,8 @@ from .utils import make_tree, make_flat_index, make_classes_counts
 from sklearn.model_selection import train_test_split
 
 
+# random.seed(seed_val)
+torch.cuda.empty_cache()
 class OfficeHome(Dataset):
     data_name = 'OfficeHome'
 
@@ -64,6 +66,15 @@ class OfficeHome(Dataset):
     def make_data(self):
         images = []
         labels = []
+        cfg['seed'] = int(cfg['model_tag'].split('_')[0])
+        torch.manual_seed(cfg['seed'])
+        torch.cuda.manual_seed(cfg['seed'])
+        seed_val =  cfg['seed']
+        torch.manual_seed(seed_val)
+        torch.cuda.manual_seed_all(seed_val)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        np.random.seed(seed_val)
         domain_path = os.path.join(self.raw_folder, self.domain)
         if not check_exists(domain_path):
             assert False, '{} does not exist'.format(self.domain)
@@ -152,7 +163,15 @@ class OfficeHome_Full(Dataset):
                 images.append(img_path)
                 labels.append(label)
             label += 1
-
+        cfg['seed'] = int(cfg['model_tag'].split('_')[0])
+        torch.manual_seed(cfg['seed'])
+        torch.cuda.manual_seed(cfg['seed'])
+        seed_val =  cfg['seed']
+        torch.manual_seed(seed_val)
+        torch.cuda.manual_seed_all(seed_val)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        np.random.seed(seed_val)
         # train_data, test_data, train_target, test_target = train_test_split(images, labels, test_size=0.1)
         train_data, test_data=images, images
         train_target, test_target  = labels,labels
