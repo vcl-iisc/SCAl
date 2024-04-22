@@ -170,7 +170,148 @@ def init_multi_cent_psd_label(model, dataloader, flag=False, flag_NRC=False, con
         else:
             return feat_multi_cent.cpu(), all_psd_label.cpu(), emd_feat_out_.cpu(),all_cls_out.cpu()
 
-
+def init_multi_cent_psd_label_crco(model,tech_model, dataloader, flag=False, flag_NRC=False, confu_mat_flag=False):
+    model.eval()
+    emd_feat_stack = []
+    cls_out_stack = []
+    gt_label_stack = []
+    
+    for i, input in enumerate(dataloader):
+        input = collate(input)
+        input_size = input['data'].size(0)
+        # print(input_size)
+        input['loss_mode'] = cfg['loss_mode']
+        input = to_device(input, cfg['device'])
+        # data_test = data_test.cuda()
+        # data_label = data_label.cuda()
+        if flag:
+            # For G-SFDA
+            embed_feat, _, cls_out = model(input, t=1)
+        else:
+            if cfg['add_fix']==0:
+                embed_feat, cls_out = model(input)
+            elif cfg['add_fix'] ==1 and cfg['logit_div'] == 0:
+                embed_feat, cls_out,_ = model(input)
+            elif cfg['add_fix'] ==1 and cfg['logit_div'] == 1:
+                embed_feat, cls_out,_,_ = model(input)
+            # if i ==1:
+            #     print(embed_feat)
+        f_weak,weak_logit,f_s1,strong1_logit,f_s2,strong2_logit = model(input)
+ 
+        t_f_weak,t_weak_logit,t_f_s1,t_strong1_logit,t_f_s2,t_strong2_logit = tech_model(input)
+        
+        emd_feat_stack.append(embed_feat)
+        cls_out_stack.append(cls_out)
+        gt_label_stack.append(input['target'])
+        
+    all_gt_label = torch.cat(gt_label_stack, dim=0)
+    # print(cls_out_stack)
+    
+    all_emd_feat = torch.cat(emd_feat_stack, dim=0)
+    emd_feat_out_ = all_emd_feat
+    all_emd_feat = all_emd_feat / torch.norm(all_emd_feat, p=2, dim=1, keepdim=True)
+    # print('emb fet')
+    # print(all_emd_feat.shape)
+    # print(all_emd_feat.shape)
+    # current VISDA-C k_seg is set to 3
+    # topk_num = max(all_emd_feat.shape[0] // (args.class_num * args.topk_seg), 1)
+    # print(all_emd_feat.shape[0])
+    # print('target',cfg['target_size'],all_emd_feat.shape[0])
+    topk_num = max(all_emd_feat.shape[0] // (cfg['target_size'] *3), 1)
+    # topk_num = max(all_emd_feat.shape[0] // (cfg['target_size'] *1), 1)
+    # topk_num = max(all_emd_feat.shape[0] // (cfg['target_size'] * 20), 1)
+    # topk_num = 3
+    print('topk num',topk_num)
+    all_cls_out = torch.cat(cls_out_stack, dim=0)
+    _, all_psd_label = torch.max(all_cls_out, dim=1)
+    # print(len(all_gt_label))
+    # exit()
+    acc = torch.sum(all_gt_label == all_psd_label) / len(all_gt_label)
+    acc_list = [acc]
+    # print(all_emd_feat.shape)
+    # print(all_cls_out)
+    #------------------------------------------------------------#
+    # multi_cent_num = 3 if 3<topk_num else 1
+    # print(topk_num)
+    # multi_cent_num = 3 if 3<=topk_num else 1
+    
+    multi_cent_num = 1
+    # print(multi_cent_num)
+    feat_multi_cent = to_device(torch.zeros((cfg['target_size'], multi_cent_num, cfg['embed_feat_dim'])),cfg['device'])
+    # feat_multi_cent = to_device(torch.zeros((cfg['target_size'], multi_cent_num,2048)),cfg['device'])
+    faiss_kmeans = faiss.Kmeans(cfg['embed_feat_dim'], multi_cent_num, niter=100, verbose=False, min_points_per_centroid=1)
+    # faiss_kmeans = faiss.Kmeans(2048, multi_cent_num, niter=100, verbose=False, min_points_per_centroid=1)
+    # print(faiss_kmeans)
+    iter_nums = 2
+    for iter in range(iter_nums):
+        # print(iter)
+        for cls_idx in range(cfg['target_size']):
+            if iter == 0:
+                # We apply TOP-K-Sampling strategy to obtain class balanced feat_cent initialization.
+                feat_samp_idx = torch.topk(all_cls_out[:, cls_idx], topk_num)[1]
+            else:
+                # After the first iteration, we make use of the psd_label to construct feat cent.
+                # feat_samp_idx = (all_psd_label == cls_idx)
+                feat_samp_idx = torch.topk(feat_dist[:, cls_idx], topk_num)[1]
+                
+            feat_cls_sample = all_emd_feat[feat_samp_idx, :].cpu().numpy()
+            # print(feat_cls_sample.shape)
+            # print(feat_cls_sample)
+            faiss_kmeans.train(feat_cls_sample)
+            feat_multi_cent[cls_idx, :] = to_device(torch.from_numpy(faiss_kmeans.centroids),cfg['device'])
+            
+        feat_multi_cent = to_device(feat_multi_cent,cfg['device'])
+        all_emd_feat = to_device(all_emd_feat,cfg['device'])
+        feat_dist = torch.einsum("cmk, nk -> ncm", feat_multi_cent, all_emd_feat) #[N,C,M]
+        feat_dist, _ = torch.max(feat_dist, dim=2)  # [N, C]
+        feat_dist = torch.softmax(feat_dist, dim=1) # [N, C]
+            
+        _, all_psd_label = torch.max(feat_dist, dim=1)
+        # print(all_psd_label)
+        acc = torch.sum(all_psd_label == all_gt_label) / len(all_gt_label)
+        acc_list.append(acc)
+        # print(acc_list)
+    # log = "acc:" + " --> ".join("{:.3f}".format(acc) for acc in acc_list)
+    # psd_confu_mat = confusion_matrix(all_gt_label.cpu(), all_psd_label.cpu())
+    # psd_acc_list = psd_confu_mat.diagonal()/psd_confu_mat.sum(axis=1) * 100
+    # psd_acc = psd_acc_list.mean()
+    # psd_acc_str = "{:.2f}        ".format(psd_acc) + " ".join(["{:.2f}".format(i) for i in psd_acc_list])
+    
+    # if args.test:
+    #     print(log)
+    # else:
+    #     print(log)
+    #     args.log_file.write(log+"\n")
+    #     args.log_file.flush()
+        
+    # if args.dataset == "VisDA":
+    #     print(psd_acc_str)
+    # del optimizer
+    # del optimizer_
+    # del model
+    
+    # print(feat_dist.get_device() )
+    # # print(acc_list.get_device() )
+    # # print(feat_cls_sample.device)
+    # # print(emd_feat_stack.get_device())
+    # # print(cls_out_stack.get_device())
+    # # print(gt_label_stack.get_device())
+    # # print(faiss_kmeans.get_device())
+    # exit()
+    gc.collect()
+    del feat_dist
+    # print(feat_multi_cent.get_device() )
+    # exit()
+    torch.cuda.empty_cache()
+    if flag or flag_NRC:
+        # For G-SFDA or NRC
+        return feat_multi_cent, all_psd_label, all_emd_feat, all_cls_out
+    else:
+        # For SHOT and SHOT++
+        if confu_mat_flag:
+            return feat_multi_cent, all_psd_label, psd_confu_mat,all_cls_out
+        else:
+            return feat_multi_cent.cpu(), all_psd_label.cpu(), emd_feat_out_.cpu(),all_cls_out.cpu()
 def get_final_centroids(model,test_data_loader,pred_label):
     start_test = True
     with torch.no_grad():

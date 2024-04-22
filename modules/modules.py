@@ -1370,6 +1370,368 @@ class Client:
         self.beta = torch.distributions.beta.Beta(torch.tensor([cfg['alpha']]), torch.tensor([cfg['alpha']]))
         self.verbose = cfg['verbose']
         self.EL_loss = elr_loss(500)
+        if 'crco' in cfg['loss_mode']:
+            self.num_class = self.train_loaders[0].dataset.n_classes
+            self.baseline_type = cfg['baseline_type']
+            self.lambda_ent = cfg['lambda_ent']
+            self.lambda_div = cfg['lambda_div']
+            self.lambda_aad = cfg['lambda_aad']
+            self.prob_threshold = cfg['prob_threshold']
+            self.lambda_nce = cfg['lambda_nce']
+            self.lambda_temp = cfg['lambda_temp']
+            self.pseudo_update_interval = cfg['pseudo_update_interval']
+            self.threshold = cfg['threshold']
+            self.num_k = cfg['num_k']
+            self.num_m = cfg['num_m']
+            self.lambda_near = cfg['lambda_near']
+            self.lambda_fixmatch = cfg['lambda_fixmatch']
+            self.fixmatch_start = cfg['fixmatch_start']
+            self.fixmatch_type = cfg['fixmatch_type']
+            self.use_cluster_label_for_fixmatch = cfg['use_cluster_label_for_fixmatch']
+            self.lambda_fixmatch_temp = cfg['lambda_fixmatch_temp']
+            self.bank_size = cfg['bank_size']
+            self.non_diag_alpha = cfg['non_diag_alpha']
+            self.class_contrastive_simmat = None
+            self.instance_contrastive_simmat = None
+            self.add_current_data_for_instance = cfg['add_current_data_for_instance']
+            self.use_only_current_batch_for_instance = cfg['use_only_current_batch_for_instance']
+            self.max_iters = cfg['max_iters']
+            self.beta = cfg['beta']
+            #
+            # rank, world_size = get_dist_info()
+            rank, world_size = 0,1
+            self.world_size = world_size
+            if self.local_rank == 0:
+                log_names = ['info_nce', 'mean_max_prob', 'mask', 'mask_acc', 'cluster_mask_acc']
+                if cfg['baseline_type'] == "IM":
+                    log_names.extend(['ent', 'div'])
+                elif cfg['baseline_type'] == 'AaD':
+                    log_names.extend(['aad_pos', 'aad_neg'])
+                # loss_metrics = MetricsLogger(log_names=log_names, group_name='loss', log_interval=self.log_interval)
+                # self.register_hook(loss_metrics)
+            #
+            # if fix_classifier:
+            #     base_model = self.model_dict['base_model']
+            #     for param in base_model.module.online_classifier.parameters():
+            #         param.requires_grad = False
+            #
+            # num_image = len(self.train_loaders[0].dataset)
+            # self.weak_feat_bank = torch.randn(num_image, feat_dim).to('cuda:{}'.format(rank))
+            # self.weak_score_bank = torch.randn(num_image, self.num_class).to('cuda:{}'.format(rank))
+            # self.label_bank = torch.zeros((num_image,), dtype=torch.long).to('cuda:{}'.format(rank))
+            # self.pseudo_label_bank = torch.zeros((num_image,), dtype=torch.long).to('cuda:{}'.format(rank))
+            # self.class_prototype_bank = torch.randn(self.num_class, feat_dim).to('cuda:{}'.format(rank))
+            # self.strong_feat_bank = torch.randn(num_image, feat_dim).to('cuda:{}'.format(rank))
+            # self.strong_score_bank = torch.randn(num_image, self.num_class).to('cuda:{}'.format(rank))
+            # self.aad_weak_feat_bank = torch.randn(num_image, feat_dim).to('cuda:{}'.format(rank))
+            # self.aad_weak_score_bank = torch.randn(num_image, self.num_class).to('cuda:{}'.format(rank))
+            # #
+            # self.weak_negative_bank = torch.randn(bank_size, self.num_class).to('cuda:{}'.format(rank))
+            # self.weak_negative_bank_ptr = torch.zeros(1, dtype=torch.long).to('cuda:{}'.format(rank))
+            # self.strong_negative_bank = torch.randn(bank_size, self.num_class).to('cuda:{}'.format(rank))
+            # self.strong_negative_bank_ptr = torch.zeros(1, dtype=torch.long).to('cuda:{}'.format(rank))
+            # self.ngative_img_ind_bank = torch.zeros((bank_size,), dtype=torch.long).to('cuda:{}'.format(rank))
+    def update_bank(self,stu_model,tech_model,test_data_loader):
+        # self.set_eval_state()
+        # base_model = self.model_dict['base_model']
+        stu_model.eval()
+        shape = 0
+        emd_feat_stack = []
+        cls_out_stack = []
+        gt_label_stack = []
+        id_stack  = []
+        with torch.no_grad():
+            for i, input in enumerate(test_data_loader):
+                    input = collate(input)
+                    input_size = input['data'].size(0)
+                    if input_size<=1:
+                        break
+                    input['loss_mode'] = cfg['loss_mode']
+                    input = to_device(input, cfg['device'])
+                    # optimizer.zero_grad()
+                    # all_psd_label = to_device(all_psd_label, cfg['device'])
+                    # psd_label = all_psd_label[input['id']]
+                    # psd_label_ = all_psd_label[input['id']]
+                    # all_psd_label = all_psd_label.cpu()
+                    f_weak,weak_logit,f_s1,strong1_logit,f_s2,strong2_logit = stu_model(input)
+                    # with torch.no_grad():
+                    #     t_f_weak,t_weak_logit,t_f_s1,t_strong1_logit,t_f_s2,t_strong2_logit = tech_model(input)
+                    # emd_feat_stack.append(F.normalize(f_weak,dim=-1))
+                    # cls_out_stack.append(F.softmax(weak_logit,dim=-1))
+                    # gt_label_stack.append(input['target'])
+                    # id_stack.append(input['id'])
+            
+                    self.weak_feat_bank[input['id']] = F.normalize(f_weak,dim=-1)
+                    self.weak_score_bank[input['id']] = F.softmax(weak_logit,dim=-1)
+                    self.label_bank[input['id']] = input['target']
+            #
+                    if self.iteration == 0:
+                        target_feat = f_weak
+                        target_score = F.softmax(weak_logit, dim=-1)
+                        self.aad_weak_feat_bank[input['id']] = F.normalize(target_feat, dim=-1)
+                        self.aad_weak_score_bank[input['id']] = target_score
+        #     for data in self.train_loaders[0]:
+        #         img = data[0]['img']
+        #         img_ind = data[0]['image_ind']
+        #         img_label = data[0]['gt_label']
+        #         tmp_res = base_model(img)
+        #         feat, logits, target_feat, target_logits = tmp_res
+        #         #
+        #         tmp_feat = feat
+        #         tmp_score = F.softmax(logits, dim=-1)
+        #         feat = concat_all_gather(tmp_feat)
+        #         score = concat_all_gather(tmp_score)
+        #         img_ind = concat_all_gather(img_ind.to('cuda:{}'.format(self.local_rank)))
+        #         img_label = concat_all_gather(img_label.to('cuda:{}'.format(self.local_rank)))
+        #         self.weak_feat_bank[img_ind] = F.normalize(feat, dim=-1)
+        #         self.weak_score_bank[img_ind] = score
+        #         self.label_bank[img_ind] = img_label.squeeze(1).to('cuda:{}'.format(self.local_rank))
+        #         #
+        #         if self.iteration == 0:
+        #             target_feat = concat_all_gather(target_feat)
+        #             target_score = concat_all_gather(F.softmax(target_logits, dim=-1))
+        #             self.aad_weak_feat_bank[img_ind] = F.normalize(target_feat, dim=-1)
+        #             self.aad_weak_score_bank[img_ind] = target_score
+        #         #
+        #         shape += img.shape[0]
+        # print('rank {}, shape {}'.format(self.local_rank, shape))
+        # self.set_train_state()
+
+    def obtain_all_label(self):
+        all_output = self.weak_score_bank
+        all_fea = self.weak_feat_bank
+        all_label = self.label_bank
+        #
+        _, predict = torch.max(all_output, 1)
+
+        accuracy = torch.sum(torch.squeeze(predict).float() == all_label).item() / float(all_label.size()[0])
+        print('orig acc is {}'.format(accuracy))
+        all_fea = (all_fea.t() / torch.norm(all_fea, p=2, dim=1)).t()
+
+        all_fea = all_fea.float().cpu().numpy()
+        K = all_output.size(1)
+        aff = all_output.float().cpu().numpy()
+        #
+        predict = predict.cpu().numpy()
+        for _ in range(2):
+            initc = aff.transpose().dot(all_fea)
+            initc = initc / (1e-8 + aff.sum(axis=0)[:, None])
+            cls_count = np.eye(K)[predict].sum(axis=0)
+            labelset = np.where(cls_count > self.threshold)
+            labelset = labelset[0]
+
+            dd = cdist(all_fea, initc[labelset], 'cosine')
+            pred_label = dd.argmin(axis=1)
+            predict = labelset[pred_label]
+
+            aff = np.eye(K)[predict]
+
+        acc = np.sum(predict == all_label.cpu().float().numpy()) / len(all_fea)
+        # log_str = 'Accuracy = {:.2f}% -> {:.2f}%'.format(accuracy * 100, acc * 100)
+        print('acc is {}'.format(acc))
+        self.pseudo_label_bank = torch.from_numpy(predict).to("cuda:{}".format(self.local_rank))
+        prototype = torch.from_numpy(initc).to("cuda:{}".format(self.local_rank)).to(torch.float32)
+        self.class_prototype_bank = F.normalize(prototype)
+
+    def obtain_batch_label(self, feat, score, prototype=None):
+        feat_1 = F.normalize(feat.detach())
+        if prototype is None:
+            prototype = F.normalize(self.class_prototype_bank.detach())
+        else:
+            prototype = F.normalize(prototype.detach())
+        cos_similarity = torch.mm(feat_1, prototype.t())
+        pred_label = torch.argmax(cos_similarity, dim=1)
+        return pred_label
+
+    def my_sim_compute(self, prob_1, prob_2, sim_mat, expand=True):
+        """
+        prob_1: B1xC
+        prob_2: B2xC
+        sim_mat: CxC
+        expand: True, computation conducted between every element in prob_2 and prob_1; Fasle, need B1=B2
+        """
+        b1 = prob_1.shape[0]
+        b2 = prob_2.shape[0]
+        cls_num = prob_1.shape[1]
+        if expand:
+            prob_1 = prob_1.unsqueeze(2).unsqueeze(1).expand(-1, b2, -1, -1)  # B1xB2xCx1
+            prob_2 = prob_2.unsqueeze(1).unsqueeze(0).expand(b1, -1, -1, -1)  # B1xB2x1xC
+            prob_1 = prob_1.reshape(b1 * b2, cls_num, 1)
+            prob_2 = prob_2.reshape(b1 * b2, 1, cls_num)
+            sim = torch.sum(torch.sum(torch.bmm(prob_1, prob_2) * sim_mat, -1), -1)
+            sim = sim.reshape(b1, b2)
+        else:
+            prob_1 = prob_1.unsqueeze(2)  # BxCx1
+            prob_2 = prob_2.unsqueeze(1)  # Bx1xC
+            sim = torch.sum(torch.sum(torch.bmm(prob_1, prob_2) * sim_mat, -1), -1)
+            sim = sim.reshape(b1, 1)
+        return sim
+
+    def my_sim_compute_2(self, query_prob, pos_prob, neg_prob, sim_mat):
+        pos_logits = my_sim_compute(query_prob, pos_prob, sim_mat, expand=False)
+        neg_logits = my_sim_compute(query_prob, neg_prob, sim_mat, expand=True)
+        all_logits = torch.cat((pos_logits, neg_logits), dim=1)
+        return all_logits
+
+    def IM_loss(self, score):
+        softmax_out = score
+        loss_ent = -torch.mean(torch.sum(softmax_out * torch.log(softmax_out + 1e-5), 1)) * 0.5
+        tensors_gather = [torch.ones_like(softmax_out) for _ in range(torch.distributed.get_world_size())]
+        torch.distributed.all_gather(tensors_gather, softmax_out, async_op=False)
+        self_ind = self.local_rank
+        msoftmax = 0
+        for i in range(len(tensors_gather)):
+            if i == self_ind:
+                msoftmax += softmax_out.mean(dim=0)
+            else:
+                msoftmax += tensors_gather[i].mean(dim=0)
+        loss_div = torch.sum(msoftmax * torch.log(msoftmax + 1e-5)) * 0.5
+        return loss_ent, loss_div
+
+    def AaD_loss(self, score, feat):
+        with torch.no_grad():
+            normalized_feat = F.normalize(feat, dim=-1)
+            # normalized_feat = concat_all_gather(normalized_feat)
+            normalized_feat = normalized_feat
+            distance = normalized_feat @ self.aad_weak_feat_bank.T
+            _, idx_near = torch.topk(distance,
+                                     dim=-1,
+                                     largest=True,
+                                     k=self.num_k + 1)
+            idx_near = idx_near[:, 1:]  # batch x K
+            score_near = self.aad_weak_score_bank[idx_near]  # batch x K x C
+        #
+        tensors_gather = [torch.ones_like(score) for _ in range(torch.distributed.get_world_size())]
+        torch.distributed.all_gather(tensors_gather, score, async_op=False)
+        tensors_gather[self.local_rank] = score
+        outputs = torch.cat(tensors_gather, dim=0)
+        softmax_out_un = outputs.unsqueeze(1).expand(-1, self.num_k, -1)  # batch x K x C
+        #
+        mask = torch.ones((normalized_feat.shape[0], normalized_feat.shape[0]))
+        diag_num = torch.diag(mask)
+        mask_diag = torch.diag_embed(diag_num)
+        mask = mask - mask_diag
+        #####################
+        loss_1 = torch.mean(
+            (F.kl_div(softmax_out_un, score_near, reduction='none').sum(-1)).sum(1))
+        copy = outputs.T  # .detach().clone()#
+        dot_neg = outputs @ copy  # batch x batch
+        dot_neg = (dot_neg * mask.to("cuda:{}".format(self.local_rank))).sum(-1)  # batch
+        neg_pred = torch.mean(dot_neg)
+        return loss_1, neg_pred
+
+    def baseline_loss(self, score, feat, batch_metrics, logits):
+        if self.baseline_type == "IM":
+            loss_ent, loss_div = self.IM_loss(score)
+            batch_metrics['loss']['ent'] = loss_ent.item()
+            batch_metrics['loss']['div'] = loss_div.item()
+            return loss_ent * self.lambda_ent + loss_div * self.lambda_div
+        elif self.baseline_type == 'AaD':
+            loss_aad_pos, loss_aad_neg = self.AaD_loss(score, feat)
+            batch_metrics['loss']['aad_pos'] = loss_aad_pos.item()
+            batch_metrics['loss']['aad_neg'] = loss_aad_neg.item()
+            tmp_lambda = (1 + 10 * self.iteration / self.max_iters) ** (-self.beta)
+            return (loss_aad_pos + loss_aad_neg * tmp_lambda) * self.lambda_aad
+        else:
+            raise RuntimeError('wrong type of baseline')
+
+    def class_contrastive_loss(self, score, label, mask):
+        all_other_prob = torch.eye(self.num_class).to("cuda:{}".format(self.local_rank))
+        new_logits = self.my_sim_compute(score, all_other_prob, self.class_contrastive_simmat,
+                                         expand=True) / self.lambda_fixmatch_temp
+        loss_consistency = (F.cross_entropy(new_logits, label, reduction='none') * mask).mean()
+        return loss_consistency
+
+    def instance_contrastive_loss(self, query_feat, key_feat, neg_feat, self_ind, neg_ind):
+        pos_logits = self.my_sim_compute(query_feat, key_feat, self.instance_contrastive_simmat, expand=False) * 0.5
+        neg_logits = self.my_sim_compute(query_feat, neg_feat, self.instance_contrastive_simmat, expand=True) * 0.5
+        all_logits = torch.cat((pos_logits, neg_logits), dim=1) / self.lambda_temp
+        #
+        constrastive_labels = self.get_contrastive_labels(query_feat)
+        info_nce_loss = F.cross_entropy(all_logits, constrastive_labels) * 0.5
+        return info_nce_loss
+
+    def get_contrastive_labels(self, query_feat):
+        current_batch_size = query_feat.shape[0]
+        constrastive_labels = torch.zeros((current_batch_size,), dtype=torch.long,
+                                          device='cuda:{}'.format(self.local_rank))
+        return constrastive_labels
+
+    def obtain_neg_mask(self, self_ind, neg_ind):
+        self_size = self_ind.shape[0]
+        neg_size = neg_ind.shape[0]
+        final_mask = torch.ones((self_size, neg_size)).to('cuda:{}'.format(self.local_rank))
+        # 获取self_ind对应的特征
+        self_feat = self.aad_weak_feat_bank[self_ind, :]
+        # 计算self_feat的近邻
+        distance = self_feat @ self.aad_weak_feat_bank.T
+        _, near_ind = torch.topk(distance,
+                                 dim=-1,
+                                 largest=True,
+                                 k=self.num_k + 1)
+        #
+        neg_ind = neg_ind.unsqueeze(0).unsqueeze(2).expand(self_size, -1, 1)
+        near_ind = near_ind.unsqueeze(1)
+        #
+        mask_ind = (neg_ind == near_ind).sum(-1)
+        final_mask[mask_ind > 0] = 0
+        return final_mask
+
+    def update_negative_bank(self, weak_score, strong_score, img_ind):
+        """
+        update score bank in trainer
+        :param weak_score: weak score output by teacher model
+        :param strong_score: strong score output by teacher model
+        :img_ind: image index
+        :return: None
+        """
+
+        def update_bank(new_score, bank, ptr, img_ind=None):
+            # all_score = concat_all_gather(new_score)
+            all_score = new_score
+            batch_size = all_score.shape[0]
+            start_point = int(ptr)
+            end_point = min(start_point + batch_size, self.bank_size)
+            real_size = end_point - start_point
+            bank[start_point:end_point, :] = all_score[0:(end_point - start_point), :]
+            if img_ind is not None:
+                # img_ind = concat_all_gather(img_ind)
+                img_ind = img_ind
+                self.ngative_img_ind_bank[start_point:end_point] = img_ind[0:(end_point - start_point)]
+            if end_point == self.bank_size:
+                ptr[0] = 0
+            else:
+                ptr += batch_size
+
+        update_bank(weak_score, self.weak_negative_bank, self.weak_negative_bank_ptr, img_ind)
+        update_bank(strong_score, self.strong_negative_bank, self.strong_negative_bank_ptr)
+        # print(self.weak_negative_bank_ptr, self.strong_negative_bank_ptr)
+
+    def update_weak_bank_timely(self, feat, score, ind):
+        with torch.no_grad():
+            single_output_f_ = F.normalize(feat).detach().clone()
+            tmp_softmax_out = score
+            tmp_img_ind = ind
+            # output_f_ = concat_all_gather(single_output_f_)
+            # tmp_softmax_out = concat_all_gather(tmp_softmax_out)
+            # tmp_img_ind = concat_all_gather(tmp_img_ind)
+            #
+            output_f_ = single_output_f_
+            tmp_softmax_out = tmp_softmax_out
+            tmp_img_ind = tmp_img_ind
+            self.aad_weak_feat_bank[tmp_img_ind] = output_f_.detach().clone()
+            self.aad_weak_score_bank[tmp_img_ind] = tmp_softmax_out.detach().clone()
+
+    def obtain_sim_mat(self,tech_model, usage):
+        # base_model = self.model_dict['base_model']
+        # fc_weight = base_model.module.online_classifier.fc.weight_v.detach()
+        fc_weight = tech_model.fc.weight_v.detach()
+        normalized_fc_weight = F.normalize(fc_weight)
+        sim_mat_orig = normalized_fc_weight @ normalized_fc_weight.T
+        eye_mat = torch.eye(self.num_class).to("cuda:{}".format(self.local_rank))
+        non_eye_mat = 1 - eye_mat
+        sim_mat = (eye_mat + non_eye_mat * sim_mat_orig * self.non_diag_alpha).clone()
+        return sim_mat
     def make_hard_pseudo_label(self, soft_pseudo_label):
         max_p, hard_pseudo_label = torch.max(soft_pseudo_label, dim=-1)
         mask = max_p.ge(cfg['threshold'])
@@ -2096,7 +2458,234 @@ class Client:
                 del cent
                 # del var_cent
                 output['loss'] = loss
+        
+        
+        elif 'crco' in cfg['loss_mode']:
+            _,_,dataset = dataset
+            train_data_loader = make_data_loader({'train': dataset}, 'client')['train']
+            test_data_loader = make_data_loader({'train': dataset},'client',batch_size = {'train':50},shuffle={'train':False})['train']
+            
+            self.data_len = len(dataset)
+            num_image = self.data_len
+            rank = 0
+            feat_dim = cfg['embed_feat_dim']
+            self.weak_feat_bank = torch.randn(num_image, feat_dim).to('cuda:{}'.format(rank))
+            self.weak_score_bank = torch.randn(num_image, self.num_class).to('cuda:{}'.format(rank))
+            self.label_bank = torch.zeros((num_image,), dtype=torch.long).to('cuda:{}'.format(rank))
+            self.pseudo_label_bank = torch.zeros((num_image,), dtype=torch.long).to('cuda:{}'.format(rank))
+            self.class_prototype_bank = torch.randn(self.num_class, feat_dim).to('cuda:{}'.format(rank))
+            self.strong_feat_bank = torch.randn(num_image, feat_dim).to('cuda:{}'.format(rank))
+            self.strong_score_bank = torch.randn(num_image, self.num_class).to('cuda:{}'.format(rank))
+            self.aad_weak_feat_bank = torch.randn(num_image, feat_dim).to('cuda:{}'.format(rank))
+            self.aad_weak_score_bank = torch.randn(num_image, self.num_class).to('cuda:{}'.format(rank))
+            #
+            self.weak_negative_bank = torch.randn(cfg['bank_size'], self.num_class).to('cuda:{}'.format(rank))
+            self.weak_negative_bank_ptr = torch.zeros(1, dtype=torch.long).to('cuda:{}'.format(rank))
+            self.strong_negative_bank = torch.randn(cfg['bank_size'], self.num_class).to('cuda:{}'.format(rank))
+            self.strong_negative_bank_ptr = torch.zeros(1, dtype=torch.long).to('cuda:{}'.format(rank))
+            self.ngative_img_ind_bank = torch.zeros((cfg['bank_size'],), dtype=torch.long).to('cuda:{}'.format(rank))
+            if cfg['world_size']==1:
+                
+                stu_model = eval('models.{}()'.format(cfg['model_name']))
+                tech_model = eval('models.{}()'.format(cfg['model_name']))
+                
+            elif cfg['world_size']>1:
+                cfg["device"] = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                model = eval('models.{}()'.format(cfg['model_name']))
+                model = torch.nn.DataParallel(model,device_ids = [0, 1])
+                model.to(cfg["device"])
+            
+            stu_model.load_state_dict(self.model_state_dict)
+            tech_model.load_state_dict(self.model_state_dict)
+    
+            self.optimizer_state_dict['param_groups'][0]['lr'] = lr
+            # self.optimizer_state_dict['param_groups'][0]['lr'] = 0.001
+
+            if cfg['model_name'] == 'resnet50_crco' and cfg['par'] == 1:
+                print('freezing')
+                cfg['local']['lr'] = lr
+                # cfg['local']['lr'] = 0.001
+                param_group_ = []
+                for k, v in stu_model.backbone_layer.named_parameters():
+                    # print(k)
+                    if "bn" in k:
+                        # param_group += [{'params': v, 'lr': cfg['local']['lr']*2}]
+                        param_group_ += [{'params': v, 'lr': cfg['local']['lr']*0.1}]
+                        # v.requires_grad = False
+                        # print(k)
+                    else:
+                        v.requires_grad = False
+
+                # for k, v in model.feat_embed_layer.named_parameters():
+                #     # print(k)
+                #     param_group_ += [{'params': v, 'lr': cfg['local']['lr']}]
+                for k, v in stu_model.class_layer.named_parameters():
+                    v.requires_grad = False
+                    # param_group += [{'params': v, 'lr': cfg['local']['lr']}]
+
+                optimizer_ = make_optimizer(param_group_, 'local')
+                optimizer = op_copy(optimizer_)
+                del optimizer_
+            else:
+                optimizer = make_optimizer(model.parameters(), 'local')
+                optimizer.load_state_dict(self.optimizer_state_dict)
+            
+            stu_model.train(True)
+            # print(scheduler)
+            # exit()
+            
+                
+            if cfg['client']['num_epochs'] == 1:
+                num_batches = int(np.ceil(len(train_data_loader) * float(cfg['local_epoch'][0])))
+            else:
+                num_batches = None
+        
+            print(self.client_id,self.domain)
+            # if self.domain == 'webcam':
+            #     num_local_epochs = cfg['tde']
+            # else:
+            #     num_local_epochs = cfg['client']['num_epochs']
+            if fwd_pass == True and cfg['cluster']:
+                 num_local_epochs = 10                     #re 10
+            #print(num_local_epochs)
+            num_local_epochs = cfg['client']['num_epochs']
+            self.update_bank(stu_model,tech_model,test_data_loader)
+            self.obtain_all_label()
+            if self.iteration == 0:
+                self.class_contrastive_simmat = self.obtain_sim_mat(tech_model,usage='class_contrastive')
+                self.instance_contrastive_simmat = self.obtain_sim_mat(tech_model,usage='instance_contrastive')
+            for epoch in range(0, num_local_epochs ):
+                output = {}
+                loss_stack = []
+                stu_model.to(cfg["device"])
+                tech_model.to(cfg["device"])
+                with torch.no_grad():
+                    stu_model.eval()
+                    tech_model.eval()
+                    #want to update banks and get labels as per thr og code
+                    all_psd_label ,all_emd_feat,all_cls_out= init_multi_cent_psd_label_crco(stu_model,tech_model,test_data_loader)
+                stu_model.train()
+                epoch_idx=epoch
+                grad_bank = {}
+                avg_counter = 0 
+                
+
+                for i, input in enumerate(train_data_loader):
+                    input = collate(input)
+                    input_size = input['data'].size(0)
+                    if input_size<=1:
+                        break
+                    input['loss_mode'] = cfg['loss_mode']
+                    input = to_device(input, cfg['device'])
+                    optimizer.zero_grad()
+                    all_psd_label = to_device(all_psd_label, cfg['device'])
+                    psd_label = all_psd_label[input['id']]
+                    psd_label_ = all_psd_label[input['id']]
+                    all_psd_label = all_psd_label.cpu()
+                    f_weak,weak_logit,f_s1,strong1_logit,f_s2,strong2_logit = stu_model(input)
+                    with torch.no_grad():
+                        t_f_weak,t_weak_logit,t_f_s1,t_strong1_logit,t_f_s2,t_strong2_logit = tech_model(input)
                     
+                    weak_prob,s1_prob,s2_prob = F.softmax(weak_logit,dim=-1),F.softmax(strong1_logit,dim=-1),F.softmax(strong2_logit,dim=-1)
+                    t_weak_prob,t_s1_prob,t_s2_prob = F.softmax(t_weak_logit,dim=-1),F.softmax(t_strong1_logit,dim=-1),F.softmaxt_(strong2_logit,dim=-1)
+                    
+                    input = to_device(input, 'cpu')
+                    #
+                    # timely updated weak bank
+                    self.update_weak_bank_timely(f_weak, weak_prob, input['id'])
+                    # baseline
+                    loss = self.baseline_loss(t_weak_prob, f_weak,t_weak_logit)
+                    # fixmatch
+                    tgt_unlabeled_label = input['target']
+                    pseudo_label = torch.softmax(weak_logit.detach(), dim=-1)
+                    max_probs, tgt_u = torch.max(pseudo_label, dim=-1)
+                    mask = max_probs.ge(cfg['prob_threshold']).float().detach()
+                    pred_right = torch.sum((tgt_u == tgt_unlabeled_label.squeeze(1)) * mask) / torch.sum(mask)
+                    if self.use_cluster_label_for_fixmatch:
+                        tgt_u = self.obtain_batch_label(t_f_weak, None)
+                        # tgt_u = self.obtain_batch_label(target_weak_feat, None)
+                        cluster_acc = torch.sum((tgt_u == tgt_unlabeled_label.squeeze(1)) * mask) / torch.sum(mask)
+                    else:
+                        cluster_acc = torch.tensor(0)
+                    mask_val = torch.sum(mask).item() / mask.shape[0]
+                    self.high_ratio = mask_val
+                    ###########
+                    if self.fixmatch_type == 'orig':
+                        strong_aug_pred = t_strong1_logit
+                        loss_consistency = (F.cross_entropy(strong_aug_pred, tgt_u, reduction='none') * mask).mean()
+                        loss += loss_consistency * self.lambda_fixmatch * 0.5
+                        strong_aug_pred = t_strong2_logit
+                        loss_consistency = (F.cross_entropy(strong_aug_pred, tgt_u, reduction='none') * mask).mean()
+                        loss += loss_consistency * self.lambda_fixmatch * 0.5
+                    #
+                    elif self.fixmatch_type == 'class_relation':
+                        #
+                        loss_1 = self.class_contrastive_loss(t_strong1_logit, tgt_u, mask)
+                        loss_2 = self.class_contrastive_loss(t_strong1_logit, tgt_u, mask)
+                        loss += (loss_1 + loss_2) * self.lambda_fixmatch * 0.5
+                    else:
+                        raise RuntimeError('wrong fixmatch type')
+                    # #
+                    # # constrastive loss
+                    tgt_img_ind = input['id']
+                    # all_k_strong = target_strong_prob
+                    all_k_strong = torch.cat((s1_prob, s2_prob), dim=0)
+                    all_k_weak = weak_prob
+                    # weak_feat_for_backbone = online_weak_prob
+                    weak_feat_for_backbone = t_weak_prob
+                    k_weak_for_backbone = all_k_weak
+                    # k_strong_for_backbone = all_k_strong[0:tgt_unlabeled_size]
+                    k_strong_for_backbone = s1_prob
+                    # strong_feat_for_backbone = online_strong_prob[0:tgt_unlabeled_size]
+                    strong_feat_for_backbone = t_s1_prob
+                    # k_strong_2 = all_k_strong[tgt_unlabeled_size:]
+                    k_strong_2 = s2_prob
+                    # feat_strong_2 = online_strong_prob[tgt_unlabeled_size:]
+                    feat_strong_2 = t_s2_prob
+                    if self.use_only_current_batch_for_instance:
+                        # tmp_weak_negative_bank = online_weak_prob
+                        tmp_weak_negative_bank = t_weak_prob
+                        tmp_strong_negative_bank = strong_feat_for_backbone
+                        # neg_ind = tgt_img_ind 
+                        neg_ind = tgt_img_ind    #input['ids']?
+                        self.num_k = 1
+                    else:
+                        if self.add_current_data_for_instance:
+                            # tmp_weak_negative_bank = torch.cat((self.weak_negative_bank, online_weak_prob), dim=0)
+                            tmp_weak_negative_bank = torch.cat((self.weak_negative_bank, t_weak_prob), dim=0)
+                            tmp_strong_negative_bank = torch.cat((self.strong_negative_bank, strong_feat_for_backbone), dim=0)
+                            # neg_ind = torch.cat((self.ngative_img_ind_bank, tgt_img_ind))
+                            neg_ind = torch.cat((self.ngative_img_ind_bank, tgt_img_ind))
+                        else:
+                            tmp_weak_negative_bank = self.weak_negative_bank
+                            tmp_strong_negative_bank = self.strong_negative_bank
+                            neg_ind = self.ngative_img_ind_bank
+                    #
+                    info_nce_loss_1 = self.instance_contrastive_loss(strong_feat_for_backbone, k_weak_for_backbone,
+                                                                    tmp_weak_negative_bank,
+                                                                    self_ind=tgt_img_ind, neg_ind=neg_ind)
+                    info_nce_loss_3 = self.instance_contrastive_loss(strong_feat_for_backbone, k_strong_2,
+                                                                    tmp_strong_negative_bank,
+                                                                    self_ind=tgt_img_ind, neg_ind=neg_ind)
+                    info_nce_loss_2 = self.instance_contrastive_loss(weak_feat_for_backbone, k_strong_for_backbone,
+                                                                    tmp_strong_negative_bank,
+                                                                    self_ind=tgt_img_ind, neg_ind=neg_ind)
+                    info_nce_loss = (info_nce_loss_1 + info_nce_loss_2 + info_nce_loss_3) / 3.0
+                    #
+                    loss += info_nce_loss * self.lambda_nce
+                    
+                    optimizer.zero_grad()
+                    loss.backward()
+                    
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+                    
+                    optimizer.step()
+                    self.update_negative_bank(weak_prob, s1_prob, tgt_img_ind)
+                    if scheduler is not None:
+                        # print('scheduler step')
+                        scheduler.step()
+                    
+                 
         elif 'fix' in cfg['loss_mode'] and 'mix' in cfg['loss_mode'] and CI_dataset is  None:
             fix_dataset, mix_dataset,_ = dataset
             fix_data_loader = make_data_loader({'train': fix_dataset}, 'client')['train']
@@ -2794,6 +3383,474 @@ def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg_
     # exit()
     return train_loss,clnt_cent,variance_clnt_cent
 
+def crco_train(model,tech_model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg_cent,fwd_pass=False,scheduler = None):
+    loss_stack = []
+    model.to(cfg["device"])
+    
+    model.train()
+    epoch_idx=epoch
+    grad_bank = {}
+    avg_counter = 0 
+    
+
+    for i, input in enumerate(train_data_loader):
+        input = collate(input)
+        input_size = input['data'].size(0)
+        if input_size<=1:
+            break
+        input['loss_mode'] = cfg['loss_mode']
+        input = to_device(input, cfg['device'])
+        optimizer.zero_grad()
+        # all_psd_label = to_device(all_psd_label, cfg['device'])
+        # psd_label = all_psd_label[input['id']]
+        # psd_label_ = all_psd_label[input['id']]
+        # all_psd_label = all_psd_label.cpu()
+        f_weak,weak_logit,f_s1,strong1_logit,f_s2,strong2_logit = model(input)
+        with torch.no_grad():
+            t_f_weak,t_weak_logit,t_f_s1,t_strong1_logit,t_f_s2,t_strong2_logit = tech_model(input)
+        
+        weak_prob,s1_prob,s2_prob = F.softmax(weak_logit,dim=-1),F.softmax(strong1_logit,dim=-1),F.softmax(strong2_logit,dim=-1)
+        t_weak_prob,t_s1_prob,t_s2_prob = F.softmax(t_weak_logit,dim=-1),F.softmax(t_strong1_logit,dim=-1),F.softmaxt_(strong2_logit,dim=-1)
+        
+        input = to_device(input, 'cpu')
+        
+        # baseline
+        loss = baseline_loss(t_weak_prob, f_weak,t_weak_logit)
+        # fixmatch
+        pseudo_label = torch.softmax(weak_logit.detach(), dim=-1)
+        max_probs, tgt_u = torch.max(pseudo_label, dim=-1)
+        mask = max_probs.ge(cfg['prob_threshold']).float().detach()
+        pred_right = torch.sum((tgt_u == tgt_unlabeled_label.squeeze(1)) * mask) / torch.sum(mask)
+        if self.use_cluster_label_for_fixmatch:
+            tgt_u = self.obtain_batch_label(online_weak_feat, None)
+            # tgt_u = self.obtain_batch_label(target_weak_feat, None)
+            cluster_acc = torch.sum((tgt_u == tgt_unlabeled_label.squeeze(1)) * mask) / torch.sum(mask)
+        else:
+            cluster_acc = torch.tensor(0)
+        mask_val = torch.sum(mask).item() / mask.shape[0]
+        high_ratio = mask_val
+        if self.iteration >= self.fixmatch_start:
+            ###########
+            if self.fixmatch_type == 'orig':
+                strong_aug_pred = online_strong_logits[0:tgt_unlabeled_size]
+                loss_consistency = (F.cross_entropy(strong_aug_pred, tgt_u, reduction='none') * mask).mean()
+                loss += loss_consistency * self.lambda_fixmatch * 0.5
+                strong_aug_pred = online_strong_logits[tgt_unlabeled_size:]
+                loss_consistency = (F.cross_entropy(strong_aug_pred, tgt_u, reduction='none') * mask).mean()
+                loss += loss_consistency * self.lambda_fixmatch * 0.5
+            #
+            elif self.fixmatch_type == 'class_relation':
+                #
+                loss_1 = self.class_contrastive_loss(online_strong_prob[0:tgt_unlabeled_size], tgt_u, mask)
+                loss_2 = self.class_contrastive_loss(online_strong_prob[tgt_unlabeled_size:], tgt_u, mask)
+                loss += (loss_1 + loss_2) * self.lambda_fixmatch * 0.5
+            else:
+                raise RuntimeError('wrong fixmatch type')
+        # #
+        # # constrastive loss
+        all_k_strong = target_strong_prob
+        all_k_weak = target_weak_prob
+        weak_feat_for_backbone = online_weak_prob
+        k_weak_for_backbone = all_k_weak
+        k_strong_for_backbone = all_k_strong[0:tgt_unlabeled_size]
+        strong_feat_for_backbone = online_strong_prob[0:tgt_unlabeled_size]
+        k_strong_2 = all_k_strong[tgt_unlabeled_size:]
+        feat_strong_2 = online_strong_prob[tgt_unlabeled_size:]
+        if self.use_only_current_batch_for_instance:
+            tmp_weak_negative_bank = online_weak_prob
+            tmp_strong_negative_bank = strong_feat_for_backbone
+            neg_ind = tgt_img_ind
+            self.num_k = 1
+        else:
+            if self.add_current_data_for_instance:
+                tmp_weak_negative_bank = torch.cat((self.weak_negative_bank, online_weak_prob), dim=0)
+                tmp_strong_negative_bank = torch.cat((self.strong_negative_bank, strong_feat_for_backbone), dim=0)
+                neg_ind = torch.cat((self.ngative_img_ind_bank, tgt_img_ind))
+            else:
+                tmp_weak_negative_bank = self.weak_negative_bank
+                tmp_strong_negative_bank = self.strong_negative_bank
+                neg_ind = self.ngative_img_ind_bank
+        #
+        info_nce_loss_1 = self.instance_contrastive_loss(strong_feat_for_backbone, k_weak_for_backbone,
+                                                         tmp_weak_negative_bank,
+                                                         self_ind=tgt_img_ind, neg_ind=neg_ind)
+        info_nce_loss_3 = self.instance_contrastive_loss(strong_feat_for_backbone, k_strong_2,
+                                                         tmp_strong_negative_bank,
+                                                         self_ind=tgt_img_ind, neg_ind=neg_ind)
+        info_nce_loss_2 = self.instance_contrastive_loss(weak_feat_for_backbone, k_strong_for_backbone,
+                                                         tmp_strong_negative_bank,
+                                                         self_ind=tgt_img_ind, neg_ind=neg_ind)
+        info_nce_loss = (info_nce_loss_1 + info_nce_loss_2 + info_nce_loss_3) / 3.0
+        #
+        loss += info_nce_loss * self.lambda_nce
+        if pred_cls.shape != psd_label.shape:
+            # psd_label is not one-hot like.
+            psd_label = torch.zeros_like(pred_cls).scatter(1, psd_label.unsqueeze(1), 1)
+        
+        mean_pred_cls = torch.mean(pred_cls, dim=0, keepdim=True) #[1, C]
+        reg_loss = - torch.sum(torch.log(mean_pred_cls) * mean_pred_cls)
+        ent_loss = - torch.sum(torch.log(pred_cls) * pred_cls, dim=1).mean()
+        psd_loss = - torch.sum(torch.log(pred_cls) * psd_label, dim=1).mean()
+        
+        unique_labels = torch.unique(psd_label_).cpu().numpy() 
+        # cent = EMA_update_multi_feat_cent_with_feat_simi(glob_multi_feat_cent, embed_feat, decay=0.9999)
+        # if epoch_idx >= 1.0:
+        #     # loss = 2.0 * psd_loss
+        #     loss = ent_loss + 1.0 * psd_loss
+        # else:
+        #     loss = - reg_loss + ent_loss
+        #print("loss_reg:",loss)
+        #==================================================================#
+        # SOFT FEAT SIMI LOSS
+        #==================================================================#
+        normed_emd_feat = embed_feat / torch.norm(embed_feat, p=2, dim=1, keepdim=True)
+        glob_multi_feat_cent = to_device(glob_multi_feat_cent,cfg['device'])
+        dym_feat_simi = torch.einsum("cmd, nd -> ncm", glob_multi_feat_cent, normed_emd_feat)
+        dym_feat_simi, _ = torch.max(dym_feat_simi, dim=2) #[N, C]
+        dym_label = torch.softmax(dym_feat_simi, dim=1)    #[N, C]
+        dym_psd_loss = - torch.sum(torch.log(pred_cls) * dym_label, dim=1).mean() - torch.sum(torch.log(dym_label) * pred_cls, dim=1).mean()
+        # if pred_cls.shape != psd_label.shape:
+            # psd_label is not one-hot like.
+        # print('dym lable shape',dym_label.shape)
+        _, dym_label = torch.max(dym_label, dim=1)
+        dym_psd_label = torch.zeros_like(pred_cls).scatter(1, dym_label.unsqueeze(1), 1)
+        # if epoch_idx >= 1.0:
+        #     loss += 0.5 * dym_psd_loss
+        glob_multi_feat_cent = glob_multi_feat_cent.cpu()
+        #print("loss_reg_dyn:",loss)
+        #==================================================================#
+        loss = ent_loss + 0.3* psd_loss + 0.1 * dym_psd_loss - reg_loss #+ cfg['wt_actloss']*act_loss
+        #==================================================================#
+        #==================================================================#
+        #==================================================================#
+        # print('bmd_loss',loss)
+        # exit()
+        # lr_scheduler(optimizer, iter_idx, iter_max)
+        # optimizer.zero_grad()
+        #==================================================================#
+        # print(cent.shape,avg_cent.shape)
+        #print("cfg_avg_cent:",cfg['avg_cent'])
+        # if cfg['avg_cent'] and avg_cent is not None:
+        #     #cent_loss = torch.nn.MSELoss()
+        #     #loss+=cfg['gamma']*cent_loss(cent.squeeze(),avg_cent.squeeze())
+        #     # loss += cfg['gamma']*dist/avg_cent.shape[0]
+
+        #     # print(loss)
+     
+        #     batch_size = embed_feat.shape[0]
+        #     class_num  = glob_multi_feat_cent.shape[0]
+        #     multi_num  = glob_multi_feat_cent.shape[1]
+    
+        #     normed_embed_feat = embed_feat / torch.norm(embed_feat, p=2, dim=1, keepdim=True)
+        #     feat_simi = torch.einsum("cmd, nd -> ncm", glob_multi_feat_cent, normed_embed_feat)
+        #     feat_simi = feat_simi.flatten(1) #[N, C*M]
+        #     feat_simi = torch.softmax(feat_simi, dim=1).reshape(batch_size, class_num, multi_num) #[N, C, M]
+    
+        #     curr_multi_feat_cent = torch.einsum("ncm, nd -> cmd", feat_simi, normed_embed_feat)
+        #     curr_multi_feat_cent /= (torch.sum(feat_simi, dim=0).unsqueeze(2) + 1e-8)
+        #     #print("cent:",cent.shape)
+        #     clnt_cent = torch.squeeze(curr_multi_feat_cent)
+        #     #print("embed_feat:",embed_feat.shape)
+        #     #clnt_cent = torch.squeeze(embed_feat)
+        #     #normed_emd_feat = embed_feat / torch.norm(embed_feat, p=2, dim=1, keepdim=True)
+        #     #dym_feat_simi = torch.einsum("cmd, nd -> ncm", glob_multi_feat_cent, normed_emd_feat)
+        #     server_cent = torch.squeeze(avg_cent)
+            
+        #     #print("clnt_cent:",clnt_cent) 
+
+        #     clnt_cent = clnt_cent/torch.norm(clnt_cent,dim=1,keepdim=True)
+        #     server_cent = server_cent/torch.norm(server_cent,dim=1,keepdim=True)
+            
+        #     server_cent = torch.transpose(server_cent,0,1)
+        #     similarity_mat = torch.matmul(clnt_cent,server_cent)
+        #     #print("similarity_mat:",similarity_mat)
+        #     temp = 8.0
+        #     similarity_mat = torch.exp(similarity_mat/temp)
+        #     pos_m = torch.diag(similarity_mat)
+        #     pos_neg_m = torch.sum(similarity_mat,axis = 1)
+            
+        #     #print("pos_m:",pos_m,"\t","neg_m:",pos_neg_m)
+        #     nce_loss = -1.0*torch.sum(torch.log(pos_m/pos_neg_m))
+        #     #print("loss:", loss,"nce_loss:",nce_loss)
+        #     if epoch_idx >= 1.0:
+        #         loss += cfg['gamma']*nce_loss
+        ############################################################################
+        max_p, hard_pseudo_label = torch.max(pred_cls, dim=-1)
+        mask = max_p.ge(cfg['threshold'])
+        embed_feat_masked = embed_feat[mask]
+        pred_cls = pred_cls[mask]
+        psd_label = psd_label[mask]
+        dym_psd_label  = dym_psd_label[mask]
+        # print('psd shape',psd_label.shape)
+        # print('t.psd shape',torch.transpose(psd_label,0,1).shape)
+        # print('embd shape',embed_feat.shape)
+        # cent_batch = torch.matmul(torch.transpose(dym_psd_label,0,1), embed_feat)
+        cent_batch = torch.matmul(torch.transpose(psd_label,0,1), embed_feat_masked)
+        # print("clnt_cent:",cent_batch.shape)
+        cent_batch_ = cent_batch / (1e-9 + psd_label.sum(axis=0)[:,None]) #C x 256
+        # cent_batch_ = cent_batch / (1e-9 + dym_psd_label.sum(axis=0)[:,None]) #C x 256
+        # print("clnt_cent:",cent_batch.shape)
+        # Calculate the class-wise variance of clnt_cent
+        variance_clnt_cent = torch.zeros(psd_label.shape[1], embed_feat_masked.shape[1]) 
+        # variance_clnt_cent = torch.zeros(dym_psd_label.shape[1], embed_feat.shape[1]) 
+        for i in range(psd_label.shape[1]):
+            # class_indices = psd_label[:, i].nonzero().squeeze() 
+            class_indices = (psd_label[:, i] == 1).nonzero(as_tuple=True)[0]
+            if len(class_indices) > 0:
+                class_squared_diff = (cent_batch[class_indices] - cent_batch_[i]) ** 2
+                variance_clnt_cent[i] = torch.mean(class_squared_diff, dim=0)
+        # for i in range(dym_psd_label.shape[1]):
+        #     # class_indices = psd_label[:, i].nonzero().squeeze() 
+        #     class_indices = (dym_psd_label[:, i] == 1).nonzero(as_tuple=True)[0]
+        #     if len(class_indices) > 0:
+        #         class_squared_diff = (cent_batch[class_indices] - cent_batch_[i]) ** 2
+        #         variance_clnt_cent[i] = torch.mean(class_squared_diff, dim=0)     
+                 
+        clnt_cent = cent_batch_/(torch.norm(cent_batch_,dim=1,keepdim=True)+1e-9)
+        clnt_cent = torch.squeeze(clnt_cent)
+        variance_clnt_cent= variance_clnt_cent/(torch.norm(variance_clnt_cent,dim=1,keepdim=True)+1e-9)
+        variance_clnt_cent = torch.squeeze(variance_clnt_cent)
+        # print('var cent shape',variance_clnt_cent.shape)
+        variance_clnt_cent = to_device(variance_clnt_cent, cfg['device'])
+        # exit()
+        ######################################################################################################
+        if cfg['avg_cent'] and avg_cent is not None:
+            # # print('pred shape:',pred_cls.shape)
+            # max_p, hard_pseudo_label = torch.max(pred_cls, dim=-1)
+            # mask = max_p.ge(cfg['threshold'])
+            # # print('max_p shape',max_p.shape)
+            # # print('embd feat shape',embed_feat.shape)
+            # # print('mask shape',mask.shape)
+            # # print(mask)
+            # # embed_feat = torch.tensor(compress(embed_feat,mask))
+            # embed_feat = embed_feat[mask]
+            # pred_cls = pred_cls[mask]
+            # psd_label = psd_label[mask]
+            # # pred_cls = torch.tensor(compress(pred_cls,mask))
+            # # print('embd feat shape',embed_feat.shape)
+            # # print('pred cls shape',pred_cls.shape)
+        # # exit()
+        #if True:    
+            if cfg['loss_mse'] == 1:
+                # cent = EMA_update_multi_feat_cent_with_feat_simi(glob_multi_feat_cent, embed_feat, decay=0.9999)
+                # cent_batch = torch.matmul(torch.transpose(psd_label,0,1), embed_feat)
+                # print("clnt_cent:",cent_batch.shape)
+                # cent_batch = cent_batch / (1e-9 + psd_label.sum(axis=0)[:,None])
+                server_cent = torch.squeeze(torch.Tensor(avg_cent.cpu()))
+                
+                # clnt_cent = cent_batch[unique_labels]/torch.norm(cent_batch[unique_labels],dim=1,keepdim=True)
+                server_cent = server_cent/torch.norm(server_cent,dim=1,keepdim=True)
+                server_cent = server_cent.to(cfg['device'])
+                server_cent = torch.transpose(server_cent,0,1)
+                # print(server_cent)
+                server_cent = (server_cent, cfg['device'])
+                clnt_cent = torch.squeeze(clnt_cent)
+                cent_loss = torch.nn.MSELoss()
+                print("server_cent:",server_cent[0].shape)
+                print("server_cent:",clnt_cent.shape)
+                print(clnt_cent.shape)
+                cent_mse = cent_loss(clnt_cent.squeeze(),server_cent[0].squeeze())
+                print('centroid_loss',cent_mse)
+                print(loss)
+                exit()
+                loss+=cfg['gamma']*cent_mse
+            else:
+                # cent_batch = torch.matmul(torch.transpose(psd_label,0,1), embed_feat)
+                # print("clnt_cent:",cent_batch.shape)
+                # cent_batch = cent_batch / (1e-9 + psd_label.sum(axis=0)[:,None]) #C x 256
+                # print("clnt_cent:",cent_batch.shape)
+                # clnt_cent = cent_batch/(torch.norm(cent_batch,dim=1,keepdim=True)+1e-9)
+                # clnt_cent = torch.squeeze(clnt_cent)
+                
+                server_cent = torch.squeeze(torch.Tensor(avg_cent.cpu()))
+                
+                # print("server_cent:",server_cent.shape)
+                
+                # clnt_cent = cent_batch[unique_labels]/(torch.norm(cent_batch[unique_labels],dim=1,keepdim=True)+1e-9)
+                # print('clnt shape',clnt_cent.shape)
+                server_cent = server_cent/(1e-9+torch.norm(server_cent,dim=1,keepdim=True))
+                # if torch.isnan(server_cent).any():
+                #     print("Tensor contains NaN values.")
+                # else:
+                #     print("Tensor does not contain NaN values.")
+                server_cent = server_cent.to(cfg['device'])
+                server_cent = torch.transpose(server_cent,0,1)
+                
+                server_cent = (server_cent, cfg['device'])
+                
+                
+                # print(type(server_cent))
+                # print(type(clnt_cent))
+                # print(clnt_cent)
+                # print(server_cent)
+                # if torch.isnan(clnt_cent).any():
+                #     print("Tensor contains NaN values.")
+                # else:
+                #     print("Tensor does not contain NaN values.")
+                
+                similarity_mat = torch.matmul(clnt_cent,server_cent[0])
+                ###############################################################
+                # server_cent = torch.squeeze(torch.Tensor(avg_cent.cpu()))
+                # server_cent = server_cent/torch.norm(server_cent,dim=1,keepdim=True)
+                # server_cent = torch.transpose(server_cent,0,1)
+                # clnt_cent = EMA_update_multi_feat_cent_with_feat_simi(glob_multi_feat_cent, embed_feat, decay=0.9999)
+                # clnt_cent = torch.squeeze(clnt_cent)
+                # print(server_cent)
+                # server_cent = torch.tensor(server_cent)
+                # # print("server_cent:",server_cent.shape)
+                # # print("clnt_cent:",clnt_cent.shape)
+                
+                # similarity_mat = torch.matmul(clnt_cent.cpu(),server_cent)
+                ################################################################
+                temp = cfg['temp']
+                similarity_mat = torch.exp(similarity_mat/temp)
+                # print(similarity_mat)
+                pos_m = torch.diag(similarity_mat)
+                pos_neg_m = torch.sum(similarity_mat,axis = 1)
+                nce_loss = -1.0*torch.sum(torch.log(pos_m/pos_neg_m))
+                # nce_loss = -1.0*torch.mean(torch.log(pos_m/pos_neg_m))
+                # print(nce_loss)
+                # exit()
+                loss += cfg['gamma']*nce_loss
+                # cent = clnt_cent
+                # loss = 0*loss+cfg['gamma']*nce_loss
+
+
+        if cfg['kl'] == 1:
+            # server_cent = torch.squeeze(torch.Tensor(avg_cent.cpu()))
+            # server_cent = server_cent/torch.norm(server_cent,dim=1,keepdim=True)
+            # server_cent = torch.transpose(server_cent,0,1)
+            cent_batch = torch.matmul(torch.transpose(psd_label,0,1), embed_feat)
+            cent_batch = cent_batch / (1e-9 + psd_label.sum(axis=0)[:,None])
+            clnt_cent = cent_batch/(1e-8+torch.norm(cent_batch,dim=1,keepdim=True))
+
+            # clnt_cent = cent_batch[unique_labels]/torch.norm(cent_batch[unique_labels],dim=1,keepdim=True)
+            # clnt_cent = EMA_update_multi_feat_cent_with_feat_simi(glob_multi_feat_cent, embed_feat, decay=0.9999)
+            clnt_cent = torch.log_softmax(clnt_cent,dim = 1)
+            clnt_cent = torch.squeeze(clnt_cent)
+            mean_p = torch.mean(clnt_cent,axis = 0)
+            std_p = torch.std(clnt_cent,axis = 0)
+            epsi = 1e-8
+            kl_loss = torch.sum(-torch.log(std_p+epsi)/2+torch.square(std_p)/2+torch.square(mean_p)/2-0.5)
+            # Compute the KL divergence analytically
+            # kl = np.log(sigma) + (sigma**2 + mu**2 - 1) / 2 - mu
+            print('kl loss',kl_loss)
+            exit()
+            loss+=cfg['kl_weight']*kl_loss
+
+
+        if cfg['kl_loss'] == 1 and avg_cent is not None:
+            server_cent = torch.squeeze(torch.Tensor(avg_cent.cpu()))
+            server_cent = server_cent/torch.norm(server_cent,dim=1,keepdim=True)
+            server_cent = torch.transpose(server_cent,0,1)
+            clnt_cent = EMA_update_multi_feat_cent_with_feat_simi(glob_multi_feat_cent, embed_feat, decay=0.9999)
+            clnt_cent = torch.squeeze(clnt_cent)
+            kl_loss = torch.nn.KLDivLoss(reduction="batchmean")
+            # input should be a distribution in the log space
+            print(clnt_cent.shape,server_cent.shape)
+            server_cent = torch.transpose(server_cent,0,1)
+            clnt_cent = clnt_cent.cpu()
+            input_c = F.log_softmax(clnt_cent, dim=1)
+            # Sample a batch of distributions. Usually this would come from the dataset
+            target_s = F.log_softmax(server_cent, dim=1)
+            print(input_c.shape,target_s.shape)
+            # print('kl loss',kl_loss)
+            # exit()
+            loss+=cfg['kl_weight']*kl_loss(input_c, target_s)
+
+        if cfg['add_fix'] ==1:
+            # target_prob,target_= torch.max(dym_label, dim=-1)
+            # target_ = dym_label
+            target_ = hard_pseudo_label
+            # print(target_.shape,x_s.shape)
+            lable_s = torch.softmax(x_s,dim=1)
+            target_ = target_[mask]
+            lable_s = lable_s[mask]
+            # print(target_.shape,lable_s.shape)
+            if target_.shape[0] != 0 and lable_s.shape[0]!= 0 :
+                # continue
+                fix_loss = loss_fn(lable_s,target_.detach())
+                # print(loss)
+                loss+=cfg['lambda']*fix_loss
+            # exit()
+            ## tbd for testing
+            # fix_loss_symmetric  = - torch.sum(torch.log(target_prob) * label_s, dim=1).mean() - torch.sum(torch.log(label_s) * target_prob, dim=1).mean()
+            ##
+            # fix_loss = loss_fn(x_s,target_.detach())
+            
+                # print('fix-loss',fix_loss)
+                # exit()
+            # fix_loss = loss_fn(label_s,target_.detach())
+            # print(fix_loss)
+        # print(loss)
+        if cfg['logit_div']==1:
+            # print('div logit')
+            kl_loss = torch.nn.KLDivLoss(reduction="mean")
+            init_pred_cls = init_pred_cls[mask] #no grad
+            # print(pred_cls.shape,init_pred_cls.shape)
+            
+            # pred_cls = torch.log(pred_cls)
+            # logit_div_loss = kl_loss(init_pred_cls,pred_cls)
+            # print(torch.sum(init_pred_cls,dim=1))
+            # print(torch.sum(pred_cls,dim=1))
+            logit_div_loss = torch.mean(torch.sum(init_pred_cls*torch.log(init_pred_cls/pred_cls),dim=1))
+            # logit_div_loss = kl_loss(pred_cls,init_pred_cls)
+            # print(logit_div_loss)
+            # exit()
+            loss+=cfg['kl_weight']*logit_div_loss
+            
+                
+        optimizer.zero_grad()
+        loss.backward()
+        # Check gradients
+        # if cfg['avg_cent'] and avg_cent is not None:
+        #     for name, param in model.named_parameters():
+        #         print(f"Parameter: {name}, Gradient: {param.grad}")
+        #     exit()
+        if cfg['trk_grad']:
+            with torch.no_grad():
+                norm_type = 2
+                total_norm = torch.norm(
+                torch.stack([torch.norm(p.grad.detach(), norm_type) for p in model.parameters()]), norm_type)
+                # for idx, param in enumerate(model.parameters()):
+                #     grad_bank[f"layer_{idx}"] += param.grad
+                #     avg_counter += 1
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+        # if fwd_pass==False:
+        
+        optimizer.step()
+        if scheduler is not None:
+            # print('scheduler step')
+            scheduler.step()
+            # print('lr at client',scheduler.get_last_lr())
+        with torch.no_grad():
+            loss_stack.append(loss.cpu().item())
+            # print(loss.cpu().item())
+            # print(loss_stack)
+            # print(glob_multi_feat_cent.shape,embed_feat.shape)
+            glob_multi_feat_cent = EMA_update_multi_feat_cent_with_feat_simi(glob_multi_feat_cent, embed_feat, decay=0.9999)
+    
+    # cent = glob_multi_feat_cent.clone()  
+    # print('cent:',cent.shape)
+    # print(loss_stack)
+    # exit()
+    train_loss = np.mean(loss_stack)
+    if cfg['trk_grad']:
+        with torch.no_grad():
+            for key in grad_bank:
+                grad_bank[key] = grad_bank[key] / avg_counter
+            with open(f"./output/gradients/{cfg['tag']}_{epoch}.json", "w") as outfile:
+                json.dump(grad_bank, outfile)
+    print('train_loss:',train_loss)
+    # return train_loss,cent
+    # del variables
+    # print(torch.cuda.memory_summary(device=cfg['device']))
+    gc.collect()
+    torch.cuda.empty_cache()
+    # print(torch.cuda.memory_summary(device=cfg['device']))
+    # exit()
+    return train_loss,clnt_cent,variance_clnt_cent
+
 def save_model_state_dict(model_state_dict):
     # print(model_state_dict.keys())
     return {k: v.cpu() for k, v in model_state_dict.items()}
@@ -2807,3 +3864,18 @@ def save_optimizer_state_dict(optimizer_state_dict):
         else:
             optimizer_state_dict_[k] = copy.deepcopy(optimizer_state_dict[k])
     return optimizer_state_dict_
+
+def baseline_loss(score, feat, batch_metrics, logits):
+        if cfg['baseline_type'] == "IM":
+            loss_ent, loss_div = self.IM_loss(score)
+            # batch_metrics['loss']['ent'] = loss_ent.item()
+            # batch_metrics['loss']['div'] = loss_div.item()
+            return loss_ent * cfg['lambda_ent'] + loss_div * cfg['lambda_div']
+        elif cfg['baseline_type'] == 'AaD':
+            loss_aad_pos, loss_aad_neg = self.AaD_loss(score, feat)
+            # batch_metrics['loss']['aad_pos'] = loss_aad_pos.item()
+            # batch_metrics['loss']['aad_neg'] = loss_aad_neg.item()
+            tmp_lambda = (1 + 10 * self.iteration / self.max_iters) ** (-self.beta)
+            return (loss_aad_pos + loss_aad_neg * tmp_lambda) * cfg['lambda_aad']
+        else:
+            raise RuntimeError('wrong type of baseline')
