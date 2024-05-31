@@ -99,7 +99,7 @@ def runExperiment():
     
     
     
-    cfg['target_size'] = 65
+    cfg['target_size'] = 345
     # model_tag = '2020_art_to_product_clipart_realworld_resnet50_1000102'
     # model_tag = '2020_art_to_product_clipart_realworld_resnet50_88888001'
     # model_tag = '2020_art_to_product_realworld_clipart_resnet50_110008'
@@ -107,9 +107,11 @@ def runExperiment():
     # model_tag = '2020_realworld_to_product_art_clipart_resnet50_110008'
     # model_tag = '2020_clipart_to_product_art_realworld_resnet50_110008'
     # model_tag = '2020_product_to_clipart_art_realworld_resnet50_110008'
-    model_tag = '2020_webcam_to_dslr_amazon_caltech10_resnet50_110002'
+    # model_tag = '2020_webcam_to_dslr_amazon_caltech10_resnet50_110002'
+    # model_tag = '2020_clipart_to_infograph_quickdraw_real_sketch_painting_resnet50_110007'
+    model_tag = '2020_infograph_to_clipart_quickdraw_real_sketch_painting_resnet50_110001'
     load_tag = 'checkpoint1'
-    result = load('./output_OC/model/target/{}_{}.pt'.format(model_tag, load_tag))
+    result = load('./output/model/target/{}_{}.pt'.format(model_tag, load_tag))
     # /home/cds/Documents/sampath/output/model/target
     # result = load('/home/cds/Documents/sampath/output/model/target/{}_{}.pt'.format(model_tag, load_tag))
     clients = result['client']
@@ -214,7 +216,7 @@ def runExperiment():
     print(silhouette_scores)
     print(max(silhouette_scores))
     k_ = silhouette_scores.index(max(silhouette_scores))  # Example: Number of clusters
-    k = list(range(2,5))[k_]
+    k = list(range(2,6))[k_]
     # k = 4
     print('number of clusters',k)
     # Assign cluster labels

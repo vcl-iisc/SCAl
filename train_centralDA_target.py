@@ -6,10 +6,13 @@ import os
 import shutil
 import time
 import torch
+import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
 from config import cfg, process_args
 from data import fetch_dataset, make_data_loader, separate_dataset_su, make_batchnorm_stats,FixTransform
-from data import fetch_dataset, split_dataset, make_data_loader, separate_dataset,separate_dataset_DA, separate_dataset_su, \
+from net_utils import init_multi_cent_psd_label,init_psd_label_shot_icml,init_psd_label_shot_icml_up
+# from utils import init_param, make_batchnorm, loss_fn ,info_nce_loss, SimCLR_Loss,elr_loss
+from data import fetch_dataset, fetch_dataset_full_test,split_dataset, make_data_loader, separate_dataset,separate_dataset_DA, separate_dataset_su, \
     make_batchnorm_dataset_su, make_batchnorm_stats , split_class_dataset,split_class_dataset_DA,make_data_loader_DA
 from metrics import Metric
 from utils import save, to_device, process_control, process_dataset, make_optimizer, make_scheduler, resume, collate,load
@@ -87,10 +90,25 @@ def runExperiment():
     torch.backends.cudnn.benchmark = False
     np.random.seed(seed_val)
     # dataset = fetch_dataset(cfg['data_name'])
+    domain =cfg['domain_u']
+    print(domain)
+    # exit()
+    if domain in ['MNIST','USPS','SVHN','MNIST_M', 'SYN32']:
+            cfg['data_name_unsup'] = domain
+            client_dataset_unsup[i] = fetch_dataset(cfg['data_name_unsup'])
+    elif domain in ['dslr','webcam','amazon']:
+        cfg['data_name_sup'] = 'office31'
+        # client_dataset_unsup[i] = fetch_dataset(cfg['data_name_unsup'],domain=domain)
+        # client_dataset_unsup[i] = fetch_dataset_full_test(cfg['data_name_unsup'],domain=domain)
+    elif domain in ['art','clipart','product','realworld']:
+        cfg['data_name_unsup'] = 'OfficeHome'
+        cfg['data_name_sup'] = 'OfficeHome'
+        # client_dataset_unsup[i] = fetch_dataset_full_test(cfg['data_name_unsup'],domain=domain)
     ####
     client_dataset_sup = fetch_dataset(cfg['data_name'],domain=cfg['domain_s'])
     # print(cfg['data_name_unsup'])
-    client_dataset_unsup = fetch_dataset(cfg['data_name_unsup'],domain=cfg['domain_u'])
+    # client_dataset_unsup = fetch_dataset(cfg['data_name_unsup'],domain=cfg['domain_u'])
+    client_dataset_unsup = fetch_dataset_full_test(cfg['data_name_unsup'],domain=domain)
     #####
     # print(len(dataset['test']))
     # process_dataset(dataset)
@@ -115,7 +133,8 @@ def runExperiment():
         client_dataset_unsup['test'].transform = transform_unsup
     # data_loader_sup = make_data_loader(client_dataset_sup, 'global')
     bt = 64
-    cfg['global']['batch_size']={'train':bt,'test':128}
+    # cfg['global']['batch_size']={'train':bt,'test':128}
+    cfg['global']['batch_size']={'train':bt,'test':64}
     print(cfg['global']['batch_size'])
     data_loader_sup = make_data_loader_DA(client_dataset_sup, 'global')
     data_loader_unsup = make_data_loader_DA(client_dataset_unsup, 'global')
@@ -148,15 +167,24 @@ def runExperiment():
     print('load tag ',cfg['tag_'])
     # exit()
     ##########################
+    # tag_ = cfg['tag_']
+    # result = resume(tag_,'best')
     tag_ = cfg['tag_']
-    result = resume(tag_,'best')
+    pick = cfg['pick']
+    # tag_ = '0_dslr_to_amazon_resnet50_01'
+    # result = resume_DA(tag_,'checkpoingt')
+    # result = resume(tag_,'best')
+    # result = resume(tag_,'checkpoint')
+    result = resume(tag_,pick)
     ##########################
     # result = resume(cfg['model_tag_load'],'checkpoint')
     # result = resume(cfg['model_tag_load'],'best')
     # result = torch.load('./output_new/model/{}_{}.pt'.format(cfg['model_tag_load'], 'checkpoint'))
     # print(model_t.state_dict().keys())
-    # print(result['model_state_dict'].keys())
+    # print(result.keys())
+    # exit()
     model_t.load_state_dict(result['model_state_dict'])
+    # server.model_state_dict=result['model_state_dict']
     # if cfg['resume_mode'] == 1:
     #     result = resume(cfg['model_tag'],'best')
     #     last_epoch = result['epoch']
@@ -178,15 +206,7 @@ def runExperiment():
     epoch  = 0
     # print(torch.cuda.memory_summary(device=1))
     # print(cfg)
-    with torch.no_grad():
-        # test_model.train(False)
-        # test_model.load_state_dict(model_t.state_dict())
-        test_model.load_state_dict(result['model_state_dict'])
-        # test_model.eval()
-        test_DA(data_loader_sup['test'], test_model, metric, logger, epoch)
-        test_DA(data_loader_unsup['test'], test_model, metric, logger, epoch)
-        # test_DA(data_loader_sup['test'], model_t, metric, logger, epoch)
-        # test_DA(data_loader_unsup['test'], model_t, metric, logger, epoch)
+    
     # exit()
     # cfg['local']['lr'] = 1e-2
     # param_group = []
@@ -212,41 +232,94 @@ def runExperiment():
     # optimizer = op_copy(optimizer)
     # scheduler = make_scheduler(optimizer, 'global')
     # print(cfg)
-    if cfg['par'] == 1:
-        print('freezing')
-        cfg['local']['lr'] = cfg['var_lr']
-        # cfg['local']['lr'] = 0.001
-        param_group_ = []
-        for k, v in model_t.backbone_layer.named_parameters():
-            # print(k)
-            if "bn" in k:
-                # param_group += [{'params': v, 'lr': cfg['local']['lr']*2}]
-                param_group_ += [{'params': v, 'lr': cfg['local']['lr']*0.1}]
-                # v.requires_grad = False
-                # print(k)
-            else:
-                v.requires_grad = False
+    # if ( cfg['model_name'] == 'resnet50' or cfg['model_name'] == 'VITs') and cfg['par'] == 1:
+    # if True:
+    #     print('freezing')
+    #     cfg['local']['lr'] = 0.001
+    #     # cfg['local']['lr'] = 0.001
+    #     param_group_ = []
+    #     for k, v in model_t.backbone_layer.named_parameters():
+    #         # print(k)
+    #         if "bn" in k:
+    #             # param_group += [{'params': v, 'lr': cfg['local']['lr']*2}]
+    #             param_group_ += [{'params': v, 'lr': cfg['local']['lr']*0.1}]
+    #             # v.requires_grad = False
+    #             # print(k)
+    #         else:
+    #             v.requires_grad = False
 
-        for k, v in model_t.feat_embed_layer.named_parameters():
-            # print(k)
-            param_group_ += [{'params': v, 'lr': cfg['local']['lr']}]
-        for k, v in model_t.class_layer.named_parameters():
-            v.requires_grad = False
-            # param_group += [{'params': v, 'lr': cfg['local']['lr']}]
+    #     for k, v in model_t.feat_embed_layer.named_parameters():
+    #         # print(k)
+    #         param_group_ += [{'params': v, 'lr': cfg['local']['lr']}]
+    #     for k, v in model_t.class_layer.named_parameters():
+    #         v.requires_grad = False
+    #         # param_group += [{'params': v, 'lr': cfg['local']['lr']}]
 
-        optimizer_ = make_optimizer(param_group_, 'local')
-        optimizer = op_copy(optimizer_)
+    #     optimizer_ = make_optimizer(param_group_, 'local')
+    #     optimizer = op_copy(optimizer_)
+    #     del optimizer_
+    # # elif cfg['model_name']=='resnet9':
+    # #     cfg['local']['lr'] = lr
+    # #     # print(model)
+    # #     param_group = []
+    # #     for k,v in model.named_parameters():
+    # #         # print(k)
+    # #         if 'n1' in k or 'n2' in k or 'n4' in k or 'bn' in k:
+    # #             # print(k)
+    # #             param_group += [{'params': v, 'lr': cfg['local']['lr']*0.1}]
+    # #         elif 'feat_embed_layer' in k:
+    # #             print(k)
+    # #             # v.requires_grad = False
+    # #             param_group += [{'params': v, 'lr': cfg['local']['lr']}]
+    # #         else :
+    # #             print('grad false',k)
+    # #             v.requires_grad = False
+    # #     # for k, v in model.feat_embed_layer.named_parameters():
+    # #     #     # print(k)
+    # #     #     if 'n1' not in k or 'n2' not in k or 'n4' not in k or 'bn' not in k:
+    # #     #         print(k)
+    # #     #         param_group += [{'params': v, 'lr': cfg['local']['lr']}]
+
+    # #     # for k, v in model.class_layer.named_parameters():
+    # #     #     v.requires_grad = False
+    # #     optimizer = make_optimizer(param_group, 'local')
+    # #     optimizer = op_copy(optimizer)
+    #     # exit()
+    # else:
+    #     # print('not freezing')
+    #     optimizer = make_optimizer(model.parameters(), 'local')
+    #     optimizer.load_state_dict(self.optimizer_state_dict)
+    
+    with torch.no_grad():
+        # test_model.train(False)
+        # test_model.load_state_dict(model_t.state_dict())
+        test_model.load_state_dict(result['model_state_dict'])
+        test_model.eval()
+        test_DA(data_loader_sup['test'], test_model, metric, logger, epoch)
+        test_DA(data_loader_unsup['test'], test_model, metric, logger, epoch)
+        # test_DA(data_loader_unsup_['test'], test_model, metric, logger, epoch=0,domain=domain)
+        # test_DA(data_loader_sup['test'], model_t, metric, logger, epoch)
+        # test_DA(data_loader_unsup['test'], model_t, metric, logger, epoch)
     cfg['iter_num'] =0 
+    lr = optimizer.param_groups[0]['lr']
     for epoch in range(last_epoch, cfg[cfg['model_name']]['num_epochs'] + 1):
         # cfg['model_name'] = 'local'
         logger.safe(True)
-        
-        train_da(client_dataset_unsup['train'], model_t, optimizer, metric, logger, epoch,scheduler)
+        lr = optimizer.param_groups[0]['lr']
+        # train_da(client_dataset_unsup['train'], model_t, optimizer, metric, logger, epoch,scheduler)
+        print('learning rate :',lr)
+        if cfg['run_shot']:
+            train_da_shot(client_dataset_unsup['train'], model_t, optimizer,lr, metric, logger, epoch,scheduler)
+        else:
+            # loss,cent = bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,self.cent,self.avg_cent)
+            # loss,cent,var_cent = bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,self.cent,self.avg_cent,fwd_pass,scheduler)
+            train_da(client_dataset_unsup['train'], model_t, optimizer, metric, logger, epoch,scheduler)
         # train_da(client_dataset_unsup['train'], model_t, optimizer, metric, logger, epoch,None)
         # module = model.layer1[0].n1
         # print(list(module.named_buffers()))
         # print(list(model.buffers()))
         # test_model = make_batchnorm_stats(client_dataset_unsup['train'], model_t, cfg['model_name'])
+        scheduler.step()
         test_model.train(False)
         # print(list(model.buffers()))
         # module = model.layer1[0].n1
@@ -254,6 +327,7 @@ def runExperiment():
         test_model.load_state_dict(model_t.state_dict())
         # print(test_model)
         test_DA(data_loader_unsup['test'], test_model, metric, logger, epoch)
+        
         # exit()
         # print(list(model.buffers()))
         # module = model.layer1[0].n1
@@ -423,6 +497,9 @@ def train(data_loader, model, optimizer, metric, logger, epoch):
             print(logger.write('train', metric.metric_name['train']))
     return
 
+
+
+
 def train_da(dataset, model, optimizer, metric, logger, epoch,scheduler):
     epoch_idx=epoch
     train_data_loader = make_data_loader({'train': dataset}, 'client')['train']
@@ -548,6 +625,120 @@ def train_da(dataset, model, optimizer, metric, logger, epoch,scheduler):
     #         print(logger.write('train', metric.metric_name['train']))
     return
 
+def train_da_shot(dataset, model, optimizer,lr, metric, logger, epoch,scheduler):
+    # cfg['local']['lr'] = lr
+    if True:
+        print('freezing')
+        cfg['local']['lr'] = lr
+        # cfg['local']['lr'] = 0.001
+        param_group_ = []
+        for k, v in model.backbone_layer.named_parameters():
+            # print(k)
+            if "bn" in k:
+                # param_group += [{'params': v, 'lr': cfg['local']['lr']*2}]
+                param_group_ += [{'params': v, 'lr': cfg['local']['lr']*0.1}]
+                # v.requires_grad = False
+                # print(k)
+            else:
+                v.requires_grad = False
+
+        for k, v in model.feat_embed_layer.named_parameters():
+            # print(k)
+            param_group_ += [{'params': v, 'lr': cfg['local']['lr']}]
+        for k, v in model.class_layer.named_parameters():
+            v.requires_grad = False
+            # param_group += [{'params': v, 'lr': cfg['local']['lr']}]
+
+        optimizer_ = make_optimizer(param_group_, 'local')
+        optimizer = op_copy(optimizer_)
+        del optimizer_
+    epoch_idx=epoch
+    # train_data_loader = make_data_loader({'train': dataset}, 'client')['train']
+    # test_data_loader = make_data_loader({'train': dataset},'client',batch_size = {'train':64},shuffle={'train':False})['train']
+    train_data_loader = make_data_loader({'train': dataset}, 'client')['train']
+    test_data_loader = make_data_loader({'train': dataset},'client',batch_size = {'train':50},shuffle={'train':False})['train']
+    # loss_stack = []
+    num_classes = cfg['target_size']
+    # avg_label_feat = torch.zeros(num_classes,256)
+    model.to(cfg["device"])
+    # print(fwd_pass)
+    # exit()
+    with torch.no_grad():
+        model.eval()
+        pred_label = init_psd_label_shot_icml(model,test_data_loader)
+        
+    
+    model.train()
+    epoch_idx=epoch
+    # for i, input in enumerate(test_data_loader):
+    for i, input in enumerate(train_data_loader):
+        input = collate(input)
+        input_size = input['data'].size(0)
+        if input_size<=1:
+            break
+        input['loss_mode'] = cfg['loss_mode']
+        input = to_device(input, cfg['device'])
+        optimizer.zero_grad()
+        pred_label = to_device(pred_label,cfg['device'])
+        psd_label = pred_label[input['id']]
+        psd_label_ = pred_label[input['id']]
+
+        if cfg['add_fix']==0:
+            embed_feat, pred_cls = model(input)
+        elif cfg['add_fix']==1 and cfg['logit_div'] ==0:
+            embed_feat, pred_cls,x_s = model(input)
+        elif cfg['add_fix']==1 and cfg['logit_div'] ==1:
+            embed_feat, pred_cls,x,x_s = model(input)
+            x_in = torch.softmax(x/cfg['temp'],dim =1)
+       
+        
+        if pred_cls.shape != psd_label.shape:
+            # psd_label is not one-hot like.
+            psd_label = to_device(psd_label,cfg['device'])
+            psd_label = torch.zeros_like(pred_cls).scatter(1, psd_label.unsqueeze(1), 1)
+        
+        #print("psd_label:",psd_label )
+        mean_pred_cls = torch.mean(pred_cls, dim=0, keepdim=True) #[1, C]
+        reg_loss = - torch.sum(torch.log(mean_pred_cls) * mean_pred_cls)
+        ent_loss = - torch.sum(torch.log(pred_cls) * pred_cls, dim=1).mean()
+        psd_loss = - torch.sum(torch.log(pred_cls) * psd_label, dim=1).mean()
+        
+       
+        loss = - reg_loss + ent_loss + 0.5*psd_loss
+        unique_labels = torch.unique(psd_label_).cpu().numpy() 
+        class_cent = torch.zeros(num_classes,embed_feat.shape[0])
+        #batch_centers = torch.zeros(len(unique_labels).embed_feat.shape[1])
+        max_p, hard_pseudo_label = torch.max(pred_cls, dim=-1)
+        mask = max_p.ge(cfg['threshold'])
+        embed_feat_masked = embed_feat[mask]
+        pred_cls = pred_cls[mask]
+        psd_label = psd_label[mask]
+        
+        if cfg['add_fix'] ==1:
+            # target_prob,target_= torch.max(dym_label, dim=-1)
+            # target_ = dym_label
+            target_ = hard_pseudo_label
+            # print(target_.shape,x_s.shape)
+            lable_s = torch.softmax(x_s,dim=1)
+            target_ = target_[mask]
+            lable_s = lable_s[mask]
+            # print(target_.shape,lable_s.shape)
+            if target_.shape[0] != 0 and lable_s.shape[0]!= 0 :
+                # continue
+                fix_loss = loss_fn(lable_s,target_.detach())
+                # print(loss)
+                loss+=cfg['lambda']*fix_loss
+     
+        optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+        optimizer.step()
+        # if scheduler is not None:
+        #     # print('scheduler step')
+        #     scheduler.step()
+        #     # print('lr at client
+    return
+
 def convert_layers(model, layer_type_old, layer_type_new, convert_weights=False, num_groups=None):
     for name, module in reversed(model._modules.items()):
         if len(list(module.children())) > 0:
@@ -633,7 +824,13 @@ def test_DA(data_loader, model, metric, logger, epoch):
             print(logger.write('test', metric.metric_name['test']))
 
     return
-
+def loss_fn(output, target, reduction='mean'):
+    if target.dtype == torch.int64:
+        # print('cross_entropy loss')
+        loss = F.cross_entropy(output, target, reduction=reduction)
+    else:
+        loss = F.mse_loss(output, target, reduction=reduction)
+    return loss
 
 if __name__ == "__main__":
     main()

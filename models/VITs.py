@@ -6,6 +6,9 @@ from config import cfg
 from .utils import init_param, make_batchnorm, loss_fn ,info_nce_loss, SimCLR_Loss,elr_loss, register_act_hooks,register_preBN_hooks
 from data import SimDataset 
 from net_utils import Entropy, CrossEntropyLabelSmooth
+import timm
+
+
 def init_weights(m):
     classname = m.__class__.__name__
     if classname.find('Conv2d') != -1 or classname.find('ConvTranspose2d') != -1:
@@ -295,21 +298,27 @@ class SFDA(nn.Module):
         self.embed_feat_dim = cfg['embed_feat_dim'] # 256
         self.class_num = cfg['target_size']          # 12 for VisDA
 
-        if "resnet" in self.backbone_arch:   
-            self.backbone_layer = ResBase(self.backbone_arch) 
+        if "vit-small" in self.backbone_arch:   
+            # self.backbone_layer = ResBase(self.backbone_arch) 
+            self.backbone_layer = timm.create_model("vit_small_patch16_224", pretrained=True)
+            self.backbone_layer.head = nn.Identity()
             # self.backbone_layer = ResNet(Bottleneck, [3,4,6,3], self.class_num)
         elif "vgg" in self.backbone_arch:
             self.backbone_layer = VGGBase(self.backbone_arch)
         else:
             raise ValueError("Unknown Feature Backbone ARCH of {}".format(self.backbone_arch))
         
-        self.backbone_feat_dim = self.backbone_layer.backbone_feat_dim
-        
-        self.feat_embed_layer = Embedding(self.backbone_feat_dim, self.embed_feat_dim, type="bn")
-        # self.feat_embed_layer = Embedding(self.backbone_feat_dim, self.embed_feat_dim)
-        
-        self.class_layer = Classifier(self.embed_feat_dim, class_num=self.class_num, type="wn")
-        # self.class_layer = Classifier(self.backbone_feat_dim, class_num=self.class_num)
+        self.backbone_feat_dim = 384
+        if cfg['vit_bn']:
+            self.feat_embed_layer = Embedding(self.backbone_feat_dim, self.embed_feat_dim, type="bn")
+            self.class_layer = Classifier(self.embed_feat_dim, class_num=self.class_num, type="wn")
+        else:
+            self.feat_embed_layer = Embedding(self.backbone_feat_dim, self.embed_feat_dim)
+            # self.feat_embed_layer = Embedding(self.backbone_feat_dim, self.embed_feat_dim)
+            
+            # self.class_layer = Classifier(self.embed_feat_dim, class_num=self.class_num, type="wn")
+            self.class_layer = Classifier(self.embed_feat_dim, class_num=self.class_num)
+            # self.class_layer = Classifier(self.backbone_feat_dim, class_num=self.class_num)
     
     def get_emd_feat(self, input_imgs):
         # input_imgs [B, 3, H, W]
@@ -526,13 +535,13 @@ def resnet_sfda(momentum=None, track=True):
     # model.apply(init_param)
     model.apply(lambda m: make_batchnorm(m, momentum=momentum, track_running_stats=track))
     return model
-def resnet50(momentum=0.1, track=True):
+def VITs(momentum=0.1, track=True):
     # data_shape = cfg['data_shape']
     # target_size = cfg['target_size']
     # hidden_size = cfg['resnet9']['hidden_size']
     # # model = ResNet(data_shape, hidden_size, Block, [1, 1, 1, 1], target_size)
     model = SFDA()
-    model.backbone_arch = 'resnet50'
+    # model.backbone_arch = 'vit-small'
     # model = convert_layers(model, torch.nn.BatchNorm2d, torch.nn.GroupNorm, num_groups = 64,convert_weights=False)
     # model = convert_layers(model, torch.nn.BatchNorm1d, torch.nn.GroupNorm, num_groups = 64,convert_weights=False)
     # if cfg['pre_trained']:

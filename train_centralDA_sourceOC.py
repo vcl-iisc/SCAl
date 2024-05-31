@@ -520,6 +520,12 @@ def train(data_loader, model, optimizer, metric, logger, epoch):
         cfg['iter_num']+=1
         max_iter = cfg['cycles']*len(data_loader)
         lr_scheduler(optimizer, iter_num=cfg['iter_num'], max_iter=max_iter)
+        if cfg['new_mix']:
+            x_mix = input['augw']
+            lam = cfg['lam']
+            x_flipped = x_mix.flip(0).mul_(1-lam)
+            x_mix.mul_(lam).add_(x_flipped)
+            input['new_mix'] = x_mix
         output = model(input)
         output['loss'] = output['loss'].mean() if cfg['world_size'] > 1 else output['loss']
         # print(output['loss'])

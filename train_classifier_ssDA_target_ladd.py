@@ -357,16 +357,16 @@ def runExperiment():
         #     # model.load_state_dict(server.model_state_dict)
         #     #====#
         #     test_model.load_state_dict(server.model_state_dict)
-            # print(test_model.feat_embed_layer.state_dict())
-            # exit()
-            #====#
-            # test_DA(data_loader_sup['test'], test_model, metric, logger, epoch=0,sup=True)
-            # for domain_id,data_loader_unsup_ in data_loader_unsup.items():
-            #     # print(data_loader_unsup_)
-            #     domain = cfg['unsup_list'][domain_id]
-            #     print(domain,domain_id)
-            #     test_DA(data_loader_unsup_['test'], test_model, metric, logger, epoch=0,domain=domain)
-            # exit()
+        #     # print(test_model.feat_embed_layer.state_dict())
+        #     # exit()
+        #     #====#
+        #     test_DA(data_loader_sup['test'], test_model, metric, logger, epoch=0,sup=True)
+        #     for domain_id,data_loader_unsup_ in data_loader_unsup.items():
+        #         # print(data_loader_unsup_)
+        #         domain = cfg['unsup_list'][domain_id]
+        #         print(domain,domain_id)
+        #         test_DA(data_loader_unsup_['test'], test_model, metric, logger, epoch=0,domain=domain)
+        #     exit()
         # train_client(client_dataset_sup['train'], client_dataset_unsup['train'], server, client, supervised_clients, optimizer, metric, logger, epoch,mode)
         # train_client_multi(client_dataset_sup['train'], client_dataset_unsup, server, client, supervised_clients, optimizer, metric, logger, epoch,mode)
         # exit()
@@ -399,10 +399,10 @@ def runExperiment():
                 cfg['with_BN'] =1
         if cfg['multi_model']:
             server.update_multi(client)
-            if cfg['global_reg']:
-                server.update_global_model(client)
         elif cfg['cluster'] == 1:
             server.update_cluster(client)
+            
+            server.update_global_model(client)
         else:
             server.update(client)
         # scheduler.step()
@@ -1119,6 +1119,7 @@ def train_client_multi(client_dataset_sup, client_dataset_unsup, server, client,
                 cfg['loss_mode'] = 'fix-mix'
             else:
                 print('Error:Undefined mode')
+            cfg['loss_mode'] = 'ladd'
             domains=[]
             # cfg['loss_mode'] = 'fix-mix'
             print(cfg['loss_mode'])
@@ -1203,17 +1204,15 @@ def train_client_multi(client_dataset_sup, client_dataset_unsup, server, client,
             if cfg['loss_mode'] == 'fix-mix' and dataset_m[0] is not None and dataset_m[1] is not None:
                 client[m].active = True
                 client[m].trainntune(dataset_m, lr, metric, logger, epoch)
-            elif 'sim' in cfg['loss_mode'] or 'sup' in cfg['loss_mode'] or 'bmd' in cfg['loss_mode']:
+            elif 'sim' in cfg['loss_mode'] or 'sup' in cfg['loss_mode'] or 'bmd' in cfg['loss_mode'] or 'ladd' in cfg['loss_mode']:
                 client[m].active = True
                 # print(len(dataset_m))
                 # print(scheduler)
                 # exit()
                 if epoch == 1 and cfg['cluster']:
-                    # client[m].trainntune(dataset_m, lr, metric, logger, epoch,fwd_pass=True,scheduler =scheduler)
-                    
-                    client[m].trainntune(dataset_m, lr, metric, logger, epoch,client=client,fwd_pass=True,scheduler =scheduler)
+                    client[m].trainntune(dataset_m, lr, metric, logger, epoch,fwd_pass=True,scheduler =scheduler)
                 else:
-                    client[m].trainntune(dataset_m, lr, metric, logger, epoch,client=client,scheduler =scheduler)
+                    client[m].trainntune(dataset_m, lr, metric, logger, epoch,scheduler =scheduler)
                 # client[m].trainntune(dataset_m, lr, metric, logger, epoch)
             else:
                 client[m].active = False

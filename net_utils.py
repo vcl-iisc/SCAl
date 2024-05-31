@@ -9,8 +9,13 @@ from scipy.spatial.distance import cdist
 from tqdm import tqdm 
 from sklearn.cluster import SpectralClustering
 from config import cfg
+import models
 import gc
 from utils import to_device, make_optimizer, collate, to_device
+
+
+
+
 # from utils import to_device, make_optimizer, collate, to_device
 def set_random_seed(seed=0):
     random.seed(seed)
@@ -74,10 +79,10 @@ def init_multi_cent_psd_label(model, dataloader, flag=False, flag_NRC=False, con
     # topk_num = max(all_emd_feat.shape[0] // (args.class_num * args.topk_seg), 1)
     # print(all_emd_feat.shape[0])
     # print('target',cfg['target_size'],all_emd_feat.shape[0])
-    topk_num = max(all_emd_feat.shape[0] // (cfg['target_size'] *3), 1)
-    # topk_num = max(all_emd_feat.shape[0] // (cfg['target_size'] *1), 1)
+    # topk_num = max(all_emd_feat.shape[0] // (cfg['target_size'] *3), 1)
+    topk_num = max(all_emd_feat.shape[0] // (cfg['target_size'] *1), 1)
     # topk_num = max(all_emd_feat.shape[0] // (cfg['target_size'] * 20), 1)
-    # topk_num = 3
+    topk_num = 3
     print('topk num',topk_num)
     all_cls_out = torch.cat(cls_out_stack, dim=0)
     _, all_psd_label = torch.max(all_cls_out, dim=1)
@@ -399,7 +404,7 @@ def init_psd_label_shot_icml(model, dataloader):
 
     accuracy = torch.sum(torch.squeeze(predict).float() == all_label).item() / float(all_label.size()[0])
     acc_list = [accuracy]
-    
+    print(acc_list)
     if args_distance == 'cosine':
         all_fea = torch.cat((all_fea, torch.ones(all_fea.size(0), 1)), 1)
         all_fea = (all_fea.t() / torch.norm(all_fea, p=2, dim=1)).t()
@@ -427,24 +432,192 @@ def init_psd_label_shot_icml(model, dataloader):
         pred_label = dd.argmin(axis=1)
         pred_label = labelset[pred_label]
 
-    #acc = np.sum(pred_label == all_label.float().numpy()) / len(all_fea)
-    #acc_list.append(acc)
+    # acc = np.sum(pred_label == all_label.float().numpy()) / len(all_fea)
+    # acc_list.append(acc)
     # log_str = 'Accuracy = {:.2f}% -> {:.2f}%'.format(accuracy * 100, acc * 100)
-    #log_str = "acc:" + " --> ".join("{:.3f}".format(acc) for acc in acc_list)
+    # log_str = "acc:" + " --> ".join("{:.3f}".format(acc) for acc in acc_list)
     
-    #psd_confu_mat = confusion_matrix(pred_label, all_label.float().numpy())
-    #psd_acc_list = psd_confu_mat.diagonal()/psd_confu_mat.sum(axis=1) * 100
-    #psd_acc = psd_acc_list.mean()
-    #psd_acc_str = "{:.2f}        ".format(psd_acc) + " ".join(["{:.2f}".format(i) for i in psd_acc_list])
+    # psd_confu_mat = confusion_matrix(pred_label, all_label.float().numpy())
+    # psd_acc_list = psd_confu_mat.diagonal()/psd_confu_mat.sum(axis=1) * 100
+    # psd_acc = psd_acc_list.mean()
+    # psd_acc_str = "{:.2f}        ".format(psd_acc) + " ".join(["{:.2f}".format(i) for i in psd_acc_list])
     
-    #if not args_test:
-    #    args.log_file.write(log_str + '\n')
-    #    args.log_file.flush()
+    # #if not args_test:
+    # #    args.log_file.write(log_str + '\n')
+    # #    args.log_file.flush()
     
     
-    #print(log_str+'\n')
-    #print(psd_acc_str)
+    # print(log_str+'\n')
+    # print(psd_acc_str)
     # return None, pred_label.astype('int')
+
+    return torch.from_numpy(pred_label.astype('int')).cuda()
+
+
+def init_psd_label_shot_icml_up(model_c, dataloader,client,id,domain):
+    args_distance = "cosine"
+    args_epsilon = 1e-5
+    args_threshold = 0.3
+    
+    args_class_num = cfg['target_size']
+    model_c.eval()
+    start_test = True
+    with torch.no_grad():
+        iter_test = iter(dataloader)
+        #for _ in tqdm(range(len(dataloader)), ncols=60):
+        for _ in range(len(dataloader)):    
+            # data = iter_test.next()
+            data = next(iter_test)
+            #print("data:",data.keys())
+            #inputs = data['augw']
+            labels = data['target']
+            input = collate(data)
+            input_size = input['data'].size(0)
+            # print(input_size)
+            input['loss_mode'] = cfg['loss_mode']
+            input = to_device(input, cfg['device'])
+            
+            feas, outputs,_ = model_c(input)
+            
+            if start_test:
+                all_fea = feas.float().cpu()
+                # all_output = outputs.float().cpu()
+                all_label = torch.FloatTensor(labels)
+                start_test = False
+            else:
+                all_fea = torch.cat((all_fea, feas.float().cpu()), 0)
+                # all_output = torch.cat((all_output, outputs.float().cpu()), 0)
+                labels = torch.FloatTensor(labels)
+                all_label = torch.cat((all_label, labels.float()), 0)
+                
+    with torch.no_grad():
+        # all_fea_ = []
+        all_output_ = []
+        # all_label_ = []
+        for m in range(len(client)):
+            start_test = True
+            if cfg['world_size']==1:
+                model = eval('models.{}()'.format(cfg['model_name']))
+                # model = eval('models.{}().to(cfg["device"])'.format(cfg['model_name']))
+            elif cfg['world_size']>1:
+                cfg["device"] = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                model = eval('models.{}()'.format(cfg['model_name']))
+                model = torch.nn.DataParallel(model,device_ids = [0, 1])
+                model.to(cfg["device"])
+    
+            domain_id = client[m].domain_id
+            cluster_id = client[m].cluster_id
+            client_id = client[m].client_id
+            # print(domain,cluster_id)
+            # if cluster_id == domain and client_id != id:
+            if cluster_id == domain :
+                # print(domain)
+            # # print(cluster_id,self.model_state_dict_cluster.keys())
+            # print(f'client{client[m].client_id} with domain {domain_id} and cluster id {cluster_id}')
+            # print('cluster labels',self.cluster_labels)
+            # # exit()
+                model.load_state_dict(client[m].model_state_dict)
+                model.to(cfg['device'])
+                iter_test = iter(dataloader)
+                #for _ in tqdm(range(len(dataloader)), ncols=60):
+                for _ in range(len(dataloader)):    
+                    # data = iter_test.next()
+                    data = next(iter_test)
+                    #print("data:",data.keys())
+                    #inputs = data['augw']
+                    labels = data['target']
+                    input = collate(data)
+                    input_size = input['data'].size(0)
+                    # print(input_size)
+                    input['loss_mode'] = cfg['loss_mode']
+                    input = to_device(input, cfg['device'])
+                    
+                    feas, outputs,_ = model(input)
+                    
+                    if start_test:
+                        # all_fea_.append(feas.float().cpu())
+                        all_output_.append(outputs.float().cpu())
+                        # all_label_.append(torch.FloatTensor(labels))
+                        start_test = False
+                    else:
+                        # all_fea_[-1] = torch.cat((all_fea_[-1], feas.float().cpu()), 0)
+                        all_output_[-1] = torch.cat((all_output_[-1], outputs.float().cpu()), 0)
+                        # labels = torch.FloatTensor(labels)
+                        # all_label_[-1] = torch.cat((all_label_[1], labels.float()), 0)
+                            
+        start_test = True    
+        weight = torch.ones(len(all_output_))
+        weight = weight / weight.sum()  
+        for m in range(len(all_output_)):
+            if start_test:
+                # all_fea = weight[m]*all_fea_[0]
+                all_output = weight[m]*all_output_[0]
+                # all_label = weight[m]*all_label_[0]
+                start_test = False
+            else:
+                # all_fea += weight[m]*all_fea_[m]
+                all_output += weight[m]*all_output_[m]
+                # all_label += weight[m]*all_label_[m]
+            
+                
+                
+            
+            
+            
+            
+    all_output =torch.softmax(all_output, dim=1)
+    ent = torch.sum(-all_output * torch.log(all_output + args_epsilon), dim=1)
+    unknown_weight = 1 - ent / np.log(args_class_num)
+    _, predict = torch.max(all_output, 1)
+
+    accuracy = torch.sum(torch.squeeze(predict).float() == all_label).item() / float(all_label.size()[0])
+    acc_list = [accuracy]
+    print(acc_list)
+    if args_distance == 'cosine':
+        all_fea = torch.cat((all_fea, torch.ones(all_fea.size(0), 1)), 1)
+        all_fea = (all_fea.t() / torch.norm(all_fea, p=2, dim=1)).t()
+
+    all_fea = all_fea.float().cpu().numpy()
+    K = all_output.size(1)
+    aff = all_output.float().cpu().numpy()
+    initc = aff.transpose().dot(all_fea)
+    initc = initc / (1e-8 + aff.sum(axis=0)[:,None])
+    cls_count = np.eye(K)[predict].sum(axis=0)
+    labelset = np.where(cls_count>args_threshold)
+    labelset = labelset[0]
+    # print(labelset)
+    dd = cdist(all_fea, initc[labelset], args_distance)
+    pred_label = dd.argmin(axis=1)
+    pred_label = labelset[pred_label]
+    acc = np.sum(pred_label == all_label.float().numpy()) / len(all_fea)
+    acc_list.append(acc)
+    print(acc_list)
+    for round in range(1):
+        aff = np.eye(K)[pred_label]
+        initc = aff.transpose().dot(all_fea)
+        initc = initc / (1e-8 + aff.sum(axis=0)[:,None])
+        dd = cdist(all_fea, initc[labelset], args_distance)
+        pred_label = dd.argmin(axis=1)
+        pred_label = labelset[pred_label]
+
+    # acc = np.sum(pred_label == all_label.float().numpy()) / len(all_fea)
+    # acc_list.append(acc)
+    # log_str = 'Accuracy = {:.2f}% -> {:.2f}%'.format(accuracy * 100, acc * 100)
+    # log_str = "acc:" + " --> ".join("{:.3f}".format(acc) for acc in acc_list)
+    
+    # psd_confu_mat = confusion_matrix(pred_label, all_label.float().numpy())
+    # psd_acc_list = psd_confu_mat.diagonal()/psd_confu_mat.sum(axis=1) * 100
+    # psd_acc = psd_acc_list.mean()
+    # psd_acc_str = "{:.2f}        ".format(psd_acc) + " ".join(["{:.2f}".format(i) for i in psd_acc_list])
+    
+    # #if not args_test:
+    # #    args.log_file.write(log_str + '\n')
+    # #    args.log_file.flush()
+    
+    
+    # print(log_str+'\n')
+    # print(psd_acc_str)
+    # # return None, pred_label.astype('int')
 
     return torch.from_numpy(pred_label.astype('int')).cuda()
 

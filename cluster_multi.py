@@ -216,7 +216,7 @@ def runExperiment():
     plt.xticks(rotation=45, ha='right')
     plt.tight_layout()
     plt.legend(loc = 'best')
-    plt.savefig('./output/ARI_different_algo_all.pdf',dpi = 600,format = 'pdf',bbox_inches = 'tight',pad_inches = 0)
+    plt.savefig('./output/ARI_different_algo_all_DN.pdf',dpi = 600,format = 'pdf',bbox_inches = 'tight',pad_inches = 0)
     exit()
 
     print(feat.shape)
