@@ -14,7 +14,7 @@ This repository supports:
 * SCAl:Federated source-Free Domain Adaptation (FFreeDA) 
 * SCAL with adaptive or fixed thresholds
 * Baseline (no SCAl)
-* BMD + SCAl variants
+* BMD(as base sfda)
 * ViT-Small and ViT-Base backbones
 * OfficeHome and DomainNet-small dataset experiments
 
@@ -76,7 +76,7 @@ python train_classifier_ssDA_target.py \
 
 ---
 
-## 📏 SCAL Variants
+## SCAL Variants
 
 ### 🟣 Fixed Threshold Instead of Adaptive
 
@@ -96,7 +96,7 @@ python train_classifier_ssDA_target.py \
 --add_fix 0
 ```
 
-### 🔶 BMD + SCAl
+### 🔶 BMD(as base sfda)
 
 ```bash
 --run_shot 0 --add_fix 1 --global_reg 1 --adpt_thr 1
