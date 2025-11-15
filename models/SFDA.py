@@ -459,15 +459,27 @@ class SFDA(nn.Module):
                 output['loss'] = loss_fn(aug_output, input['target'].detach())
             elif 'bmd' in input['loss_mode']:
                 # print(input['augw'])
+                # print('model hdlc')
+                # exit()
                 # print(input.keys())
                 f,x =self.f(input['augw'])
                 if cfg['add_fix']==1:
-                    _,x_s = self.f(input['augs'])
+                    fs,x_s = self.f(input['augs'])
+                if cfg['run_hcld'] == 1:
+                    fs,x_s = self.f(input['augs'])
                 # return f,x
-                if cfg['add_fix']==0:
+                if cfg['add_fix']==0 and cfg['run_hcld'] == 0 and cfg['run_UCon'] ==0 :
                     return f,torch.softmax(x,dim=1)
-                elif cfg['add_fix']==1 and cfg['logit_div'] ==0:
+                elif cfg['add_fix']==1 and cfg['logit_div'] ==0 and cfg['run_UCon'] == 0:
                     return f,torch.softmax(x,dim=1),x_s
+                elif cfg['run_hcld']==1 and cfg['logit_div'] ==0:
+                    # print('running_hdlc')
+                    # exit()
+                    return f,torch.softmax(x,dim=1),fs,x_s
+                elif cfg['run_UCon']==1:
+                    print('running_hdlc')
+                    exit()
+                    return f,torch.softmax(x,dim=1),fs,x_s
                 elif cfg['add_fix']==1 and cfg['logit_div'] ==1:
                     return f,torch.softmax(x,dim=1),x,x_s
                     # if cfg['logit_div'] == 1:

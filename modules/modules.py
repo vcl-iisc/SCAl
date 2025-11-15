@@ -11,6 +11,10 @@ from itertools import compress
 from config import cfg
 from data import make_data_loader, make_batchnorm_stats, FixTransform, MixDataset
 from .utils import init_param, make_batchnorm, loss_fn ,info_nce_loss, SimCLR_Loss,elr_loss
+from .utils_partial_label import calculate_k_values, partial_label_loss, partial_label_bank_update,dc_loss_calculate, selection_mask_bank_update, logits_ratio_calculation, obtain_sample_R_ratio, evaluate_unlearning_bank
+
+from .utils_evaluation import cal_acc, partial_Y_evaluation, evaluate_unlearning_bank, cal_acc_aug
+
 from utils import to_device, make_optimizer, collate, to_device
 from train_centralDA_target import op_copy
 from metrics import Accuracy
@@ -2815,11 +2819,14 @@ class Client:
             # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=len(train_data_loader), eta_min=0)
             # print(len(train_data_loader))
             # exit()
+            # print(cfg['run_shot'])
+            # exit()
             id = self.client_id
             domain = self.domain
             self.communication_round += 1
             print('number of loacl epochs',num_local_epochs)
             # exit()
+            start_time = datetime.datetime.now()
             for epoch in range(0, num_local_epochs ):
                 print('current epoch:',epoch)
                 output = {}
@@ -2856,6 +2863,19 @@ class Client:
                         #     self.threshold = threshold
                         #     thres = self.threshold
                         #     self.adpt_thr = 0
+                elif cfg['run_hcld']:
+                    print('running hdlc')
+                    loss, threshold = hcld_train(model,train_data_loader,test_data_loader,optimizer,epoch,self.cent,self.avg_cent,id,domain,fwd_pass=fwd_pass,scheduler=scheduler,client=client,global_model = model,thres=thres, adpt_thr = self.adpt_thr)
+                    self.client_threshold.append(threshold)
+                        # if epoch == 0 and self.adpt_thr :
+                        #     self.threshold = threshold
+                        #     thres = self.threshold
+                        #     self.adpt_thr = 0
+                elif cfg['run_UCon']:
+                    print('runing UCon')
+                    loss, threshold = UCon_train(model,train_data_loader,test_data_loader,optimizer,epoch,self.cent,self.avg_cent,id,domain,fwd_pass=fwd_pass,scheduler=scheduler,client=client,global_model = model,thres=thres, adpt_thr = self.adpt_thr)
+                    self.client_threshold.append(threshold)
+                    
                 else:
                     # loss,cent = bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,self.cent,self.avg_cent)
                     # loss,cent,var_cent = bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,self.cent,self.avg_cent,fwd_pass,scheduler)
@@ -2876,7 +2896,11 @@ class Client:
                 # print(self.cent)
                 # del cent
                 # del var_cent
+            
                 output['loss'] = loss
+            end_time = datetime.datetime.now()
+            print('time:',(end_time-start_time).total_seconds() * 1)
+            # exit()
         
         
         elif 'crco' in cfg['loss_mode']:
@@ -2991,6 +3015,7 @@ class Client:
                 self.instance_contrastive_simmat = self.obtain_sim_mat(tech_model,usage='instance_contrastive')
             # print(num_local_epochs)
             # exit()
+            start_time = datetime.datetime.now()
             for epoch in range(0, num_local_epochs ):
                 output = {}
                 loss_stack = []
@@ -3253,13 +3278,16 @@ class Client:
                     #EMA updating teacher model
                     with torch.no_grad():
                         update_moving_average(tech_model, stu_model)
+            end_time = datetime.datetime.now()
+            print('crco_run time:', (end_time-start_time).total_seconds())
+            # exit()
                     
                     
         elif 'ladd' in cfg['loss_mode']:
             _,_,dataset = dataset
             train_data_loader = make_data_loader({'train': dataset}, 'client')['train']
             test_data_loader = make_data_loader({'train': dataset},'client',batch_size = {'train':50},shuffle={'train':False})['train']
-            
+            start_time = datetime.datetime.now()
             self.data_len = len(dataset)
             num_image = self.data_len
             rank = 0
@@ -3462,6 +3490,9 @@ class Client:
                     for ks,vs in stu_model.named_parameters():
                         if k==ks:
                             v = 0.5*v+0.5*vs
+            end = datetime.datetime.now()
+            print('ladd run time:', (end-start_time).total_seconds())
+            exit()
                         
                 
                 
@@ -3631,10 +3662,14 @@ def shot_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg
     epoch_idx=epoch
     # print('starting runs okkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk')
     # for i, input in enumerate(test_data_loader):
+    Tg = 0
+    l1=l2=0
     for i, input in enumerate(train_data_loader):
         # print(i)
+        # Tg+=1
         input = collate(input)
         input_size = input['data'].size(0)
+        # print(input_size)
         if input_size<=1:
             break
         input['loss_mode'] = cfg['loss_mode']
@@ -3666,6 +3701,7 @@ def shot_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg
         # print('applying again')
         with torch.no_grad():
             if cfg['global_reg'] == 1:
+                t1 = datetime.datetime.now()
                 if cfg['cls_ps'] == True:
                     _,_,g_yw,g_ys = model(input)
                 else:
@@ -3673,10 +3709,13 @@ def shot_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg
                     _,g_yw,g_ys = global_model(input)
                 g_max_p, g_hard_pseudo_label = torch.max(g_yw, dim=-1)
                 # print(thres)
-                # exit()
+                # print(g_yw.shape)
                 # g_mask = g_max_p.ge(cfg['threshold'])
                 g_mask = g_max_p.ge(thres)
                 g_yw = g_yw[g_mask]
+                l2+=torch.sum(g_mask==True)
+                
+                # exit()
                 # lable_s = torch.softmax(x_s,dim=1)
                 # g_lable_s = lable_s[g_mask]
                 #########################################
@@ -3684,7 +3723,7 @@ def shot_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg
                 
                 # g_mask = g_max_p.ge(cfg['threshold'])
                 mask2 = max_p2.ge(thres)
-        
+                t2  = datetime.datetime.now()
         
                 
                 # lable_s = torch.softmax(x_s,dim=1)
@@ -3740,11 +3779,13 @@ def shot_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg
             loss += cfg['var_wt']*loss_var
             # print(cfg['var_wt'],'varience weight',loss_var)
         if cfg['FedProx']:
-                        # print('local update frdprox')
+            t1 = datetime.datetime.now()        # print('local update frdprox')
             proximal_term = 0.0
             for w, w_t in zip(model.parameters(), global_model.parameters()):
                 proximal_term += (w - w_t.detach()).norm(2)
             loss+= (cfg['mu']/ 2) * proximal_term
+            t2 = datetime.datetime.now()
+            Tg+=(t2-t1).total_seconds()
         # print(loss)
         # exit()
         unique_labels = torch.unique(psd_label_).cpu().numpy() 
@@ -3801,8 +3842,10 @@ def shot_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg
             # print(target_.shape,x_s.shape)
             lable_s = torch.softmax(x_s,dim=1)
             target_l = target_l[mask]
+            l1+=torch.sum(g_mask==True)
             # lable_s = torch.softmax(x_s,dim=1)
             if cfg['global_reg'] == 1:
+                # t3 = datetime.datetime.now()
                 g_lable_s = lable_s[g_mask]
             lable_s = lable_s[mask]
             # lable_s2 = lable_s[mask2]
@@ -3814,6 +3857,7 @@ def shot_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg
             #     loss+=cfg['lambda']*fix_loss
                 
             if cfg['global_reg'] == 1:
+                t3 = datetime.datetime.now()
                 # target_prob,target_= torch.max(dym_label, dim=-1)
                 # target_ = dym_label
                 # lable_s = torch.softmax(x_s,dim=1)
@@ -3848,6 +3892,7 @@ def shot_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg
                     # exit()
                     loss+=cfg['g_lambda']*g_fix_loss
                     # loss+=wg*g_fix_loss
+                t4 = datetime.datetime.now()
                 #######################################
                 # target_2 = hard_pseudo_label2
                 # target_ = hard_pseudo_label
@@ -3887,7 +3932,10 @@ def shot_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg
         # print(loss)
         # exit()
         
-                        
+        # print('1 global forward-pass time:',((t2-t1)).total_seconds())
+        # exit()         
+        # Tg+= (t2-t1).total_seconds()
+        # exit()
         optimizer.zero_grad()
         grad_sum = 0
         # for k, v in model.backbone_layer.named_parameters():
@@ -3919,6 +3967,9 @@ def shot_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg
         if scheduler is not None:
             # print('scheduler step')
             scheduler.step()
+    # print('total time for 1 forwad pass through global model:', Tg)
+    # print(l1,l2)
+    # exit()
             # print('lr at client
     with torch.no_grad():
         loss_stack.append(loss.cpu().item())
@@ -3931,7 +3982,7 @@ def shot_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg
     
        
     train_loss = np.mean(loss_stack)
-
+    
     return train_loss,thres
 
 
@@ -4115,7 +4166,11 @@ def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg_
         glob_multi_feat_cent = glob_multi_feat_cent
         #print("loss_reg_dyn:",loss)
         #==================================================================#
-        loss = ent_loss + 0.3* psd_loss + 0.1 * dym_psd_loss - reg_loss #+ cfg['wt_actloss']*act_loss
+        if 0: # need to change to 1 normal case
+            loss = ent_loss + 0.3* psd_loss + 0.1 * dym_psd_loss - reg_loss #+ cfg['wt_actloss']*act_loss
+        else:
+            loss = ent_loss + psd_loss + dym_psd_loss  - reg_loss #+ cfg['wt_actloss']*act_loss
+        
         #==================================================================#
         #==================================================================#
         #==================================================================#
@@ -4518,6 +4573,957 @@ def bmd_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg_
     # exit()
     # return train_loss,clnt_cent,variance_clnt_cent
     return train_loss, thres
+
+def UCon_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg_cent,id,domain,fwd_pass=False,scheduler = None,client = None,global_model = None,thres=None,cls_ps=None,adpt_thr = None):
+    loss_stack = []
+    num_classes = cfg['target_size']
+    avg_label_feat = torch.zeros(num_classes,256)
+    model.to(cfg["device"])
+    args = {
+    "config": None,
+    "gpu_id": "0",
+    "dset": "domainnet",  # options: ["VISDA-C", "office", "office-home", "domainnet"]
+    "list_name": "image_list",  # other options: image_list_nrc, image_list_partial
+    "net": "resnet50",
+    "net_mode": "fbc",  # options: ["fbc", "fc"]
+    "source": "c",
+    "target": "s",
+    "max_epoch": 40,
+    "interval": 40,
+    "batch_size": 64,
+    "num_workers": 6,
+    "seed": 2020,
+
+
+    # learning rate
+    "lr": 1e-3,
+    "lr_F_coef": 0.5,
+    "weight_decay": 1e-3,
+    "lr_decay": True,
+    "lr_decay_type": "shot",  # choices=["shot"]
+    "lr_power": 0.75,
+
+    # model specific
+    "K": 5,
+    "alpha": 1.0,
+    "beta": 0.75,
+    "alpha_decay": False,
+
+    # data augmentation - dispersion control
+    "dc_coef_type": "fixed",  # or "init_incons"
+    "dc_coef": 0.5,
+    "dc_temp": 1.0,
+    "dc_loss_type": "ce",
+
+    # partial label
+    "partial_coef": 1e-3,
+    "partial_k_type": "fixed",  # or "cal"
+    # "partial_k_type": "cal",
+    "partial_k": 2,
+
+    "tau_type": "fixed",  # or "stat", "cal"
+    # "tau_type":  "cal",
+    "sample_selection_R": 1.1,
+
+    # warmup
+    "warmup_eval_iter_num": 100,
+    }
+    args['class_num'] = num_classes
+    # training params
+    max_iter = epoch * len(test_data_loader)
+    interval_iter = max_iter // args['interval']
+    iter_num = 0
+    best = 0
+    best_log_str = " "
+    test_num = 0
+    sample_selection_R = args['sample_selection_R']
+    consistency = 0
+    consistency_0 = 0
+    k_values_list = []
+    k_stars_list = []
+    uncertain_ratio_list = []
+
+    #  building feature bank and score bank
+    # print(dataloader)
+    loader = test_data_loader
+    num_sample = len(loader.dataset)
+    fea_bank = torch.randn(num_sample, 256)
+    score_bank = torch.randn(num_sample, num_classes).to(cfg["device"])
+    pure_score_bank = torch.randn(num_sample, num_classes).to(cfg["device"])
+    label_bank = torch.ones(num_sample).long() * -1
+    partial_label_bank = torch.zeros(num_sample, num_classes).long().to(cfg["device"])
+    sample_selection_mask_bank = torch.zeros(num_sample).long().to(cfg["device"])
+    
+    with torch.no_grad():
+        model.eval()
+        pred_label,updated_threshold = init_psd_label_shot_icml(model,test_data_loader,domain = domain,id = id, adpt_thr = adpt_thr,client_id=id)
+        iter_test = iter(loader)
+        for i in range(len(loader)):
+            data = next(iter_test)
+            # inputs = data[0][1]
+            
+            # labels = data[1]
+            labels = data['target']
+            # print(data['id'])
+            # exit()
+            input = collate(data)
+            input_size = input['data'].size(0)
+            indx = data['id']
+            # print(input_size)
+            input['loss_mode'] = cfg['loss_mode']
+            input = to_device(input, cfg['device'])
+            # input = input.to(cfg["device"])
+            output, outputs,_,_ = model(input)
+            output_norm = F.normalize(output)
+            outputs = nn.Softmax(-1)(outputs)
+            
+
+            fea_bank[indx] = output_norm.detach().clone().cpu()
+            score_bank[indx] = outputs.detach().clone() 
+            pure_score_bank[indx] = outputs.detach().clone()
+            label_bank[indx] = torch.tensor(labels)
+            
+         
+            if args['partial_k_type'] == "fixed":
+                partial_label_bank = partial_label_bank_update(partial_label_bank, indx, outputs, k_values=args['partial_k'])
+
+            elif args['partial_k_type'] == "cal":
+                k_stars, k_values = calculate_k_values(outputs)
+                k_stars_list.append(k_stars.detach().clone())
+                k_values_list.append(k_values.detach().clone())
+                partial_label_bank = partial_label_bank_update(partial_label_bank, indx, outputs, k_values=k_values)
+            sample_selection_mask_bank, uncertain_ratio = selection_mask_bank_update(sample_selection_mask_bank, indx, outputs, args, ratio=sample_selection_R)
+            uncertain_ratio_list.append(uncertain_ratio.detach().clone())
+    init_logits_ratio = logits_ratio_calculation(pure_score_bank.detach().clone())
+    sample_selection_R = obtain_sample_R_ratio(args, init_logits_ratio)
+    sample_selection_R = evaluate_unlearning_bank(pure_score_bank, label_bank, partial_label_bank, sample_selection_mask_bank, sample_selection_R, uncertain_ratio_list, k_stars_list, k_values_list, args, logger=None)
+    k_stars_list = []
+    k_values_list = []
+    uncertain_ratio_list = []
+    model.train()
+    
+    consistency = consistency_0
+    if args['alpha_decay']:
+            alpha = (1 + 10 * iter_num / max_iter) ** (-args['beta']) * args['alpha']
+    else:
+        alpha = args['alpha']
+    alpha = max(alpha, 5e-6)
+    print('threshold',thres)
+    # return None,None
+    if adpt_thr:
+        thres = updated_threshold
+        print('updated threshold',thres)
+    # return None,None
+    model.train()
+    epoch_idx=epoch
+    # print('starting runs okkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk')
+    # for i, input in enumerate(test_data_loader):
+    Tg = 0
+    l1=l2=0
+    for i, input in enumerate(train_data_loader):
+        # print(i)
+        # Tg+=1
+        input = collate(input)
+        input_size = input['data'].size(0)
+        tar_idx = input['id']
+        # print(input_size, tar_idx.shape)
+        # exit()
+        if input_size<=1:
+            break
+        if input_size!=tar_idx.shape[0]:
+            continue
+        input['loss_mode'] = cfg['loss_mode']
+        input = to_device(input, cfg['device'])
+        optimizer.zero_grad()
+        pred_label = to_device(pred_label,cfg['device'])
+        psd_label = pred_label[input['id']]
+        psd_label_ = pred_label[input['id']]
+        
+        if cfg['add_fix']==0:
+            if cfg['cls_ps']:
+                cls_ps.train()
+                p,embed_feat, pred_cls = model(input)
+                adapt_feat,ps_cls = cls_ps(p)
+            else:
+                embed_feat, pred_cls,fs,x_s = model(input)
+        elif cfg['add_fix']==1 and cfg['logit_div'] ==0:
+            if cfg['cls_ps']:
+                p,embed_feat, pred_cls,x_s = model(input)
+                adapt_feat,ps_cls = cls_ps(p)
+                # print(ps_cls.shape,pred_cls.shape)
+                # exit()
+            else:
+                embed_feat, pred_cls,fs,x_s = model(input)
+    
+        elif cfg['add_fix']==1 and cfg['logit_div'] ==1:
+            embed_feat, pred_cls,x,x_s = model(input)
+            x_in = torch.softmax(x/cfg['temp'],dim =1)
+            
+        # ========================================================
+        # =================== Model Forward ======================
+        # ========================================================
+        # main model forward
+        # features_test, outputs_test = model(inputs_test)
+        # features_test, outputs_test,features_test1, outputs_test1  = model(input)
+        features_test, outputs_test,features_test1, outputs_test1  = embed_feat, pred_cls,fs,x_s
+        softmax_out = nn.Softmax(dim=1)(outputs_test)
+
+        # data aug for dispersion control
+        # = model(inputs1)
+        features = []
+        features.append(features_test1)
+        outputs = []
+        outputs.append(outputs_test1)
+
+        # ========================================================
+        # ======================== loss ==========================
+        # ========================================================
+        loss = torch.tensor(0.0).to(cfg["device"])
+
+        # generate pseudo-pred
+        with torch.no_grad():
+            pred = softmax_out.max(1)[1].long()  # .detach().clone()
+        # K_PL update
+        if args['partial_k_type'] == "fixed":
+            partial_label_bank = partial_label_bank_update(partial_label_bank, tar_idx, softmax_out, k_values=args['partial_k'])
+        elif args['partial_k_type'] == "cal":
+            k_stars, k_values = calculate_k_values(softmax_out)
+            k_stars_list.append(k_stars.detach().clone())
+            k_values_list.append(k_values.detach().clone())
+            partial_label_bank = partial_label_bank_update(partial_label_bank, tar_idx, softmax_out, k_values=k_values)
+            
+        # tau update
+        # print(sample_selection_R)
+        # exit()
+        sample_selection_mask_bank, uncertain_ratio = selection_mask_bank_update(sample_selection_mask_bank, tar_idx, softmax_out, args, ratio=sample_selection_R)
+        uncertain_ratio_list.append(uncertain_ratio.detach().clone())
+        batch_selection_mask = sample_selection_mask_bank[tar_idx]
+        batch_selection_indx = torch.nonzero(batch_selection_mask, as_tuple=True)[0]
+        # batch_loss_str += (
+        #         f"[Sample Selection] Ratio = {sample_selection_R}; Cur Batch size: {tar_idx.size()[0]}; Selected Number per Batch: {batch_selection_indx.size()[0]}; selection bank len: {sample_selection_mask_bank.sum()}\n"
+        #     )
+           
+
+
+        # update neighbor info
+        with torch.no_grad():
+            output_f_norm = F.normalize(features_test)
+            output_f_ = output_f_norm.cpu().detach().clone()
+            # batch_loss_str += f"[Contrastive - Pos]: No Smooth |"
+            score_bank[tar_idx] = (
+                nn.Softmax(dim=-1)(outputs_test).detach().clone()
+            )
+            pure_score_bank[tar_idx] = (nn.Softmax(dim=-1)(outputs_test).detach().clone())
+            fea_bank[tar_idx] = output_f_.detach().clone().cpu()
+        
+
+            distance = output_f_ @ fea_bank.T
+            dis_near, idx_near = torch.topk(distance, dim=-1, largest=True, k=args['K'] + 1)
+            idx_near = idx_near[:, 1:]  # batch x K
+            score_near = score_bank[idx_near]  # batch x K x C
+            
+
+        # CL - POS
+        # nn
+        softmax_out_un = softmax_out.unsqueeze(1).expand(
+            -1, args['K'], -1
+        )  # batch x K x C
+        pos_loss = torch.mean(
+            (F.kl_div(softmax_out_un, score_near, reduction="none").sum(-1)).sum(1)
+        )  
+        loss += pos_loss
+        # batch_loss_str += f" loss is: {pos_loss.item()}; \n"
+    
+        # CL - NEG
+        mask = torch.ones((input_size , input_size )).to(
+            cfg["device"]
+        )
+        diag_num = torch.diag(mask)
+        mask_diag = torch.diag_embed(diag_num)
+        mask = mask - mask_diag
+        copy = softmax_out.T  # .detach().clone()#
+        dot_neg_all = softmax_out @ copy  # batch x batch
+        dot_neg = (dot_neg_all * mask).sum(-1)  # batch
+        neg_pred = torch.mean(dot_neg)
+        neg_loss = neg_pred * alpha
+        loss += neg_loss
+        # batch_loss_str += f"[Contrastive - Neg] (*{alpha}): {neg_pred.item()} * {alpha} = {neg_loss.item()}; \n"
+            
+
+            
+        
+        # NEG - DC
+        dc_loss1 = dc_loss_calculate(outputs_test, outputs[0], args) # smooth should be 0.1
+        if args['dc_coef_type'] == "fixed":
+            cur_dc_coef_ = args['dc_coef']
+        elif args['dc_coef_type'] == "init_incons": 
+            cur_dc_coef_ = (100 - consistency) / 100
+        dc_loss = cur_dc_coef_ * dc_loss1
+        # batch_loss_str += (
+        # f"[Dispersion Control - {args['dc_loss_type']} - {args['dc_coef_type']}]: (*{cur_dc_coef_}=){dc_loss.item()}; \n"
+        # )
+        loss += dc_loss
+        
+        # POS - PL
+        if batch_selection_indx.size()[0] > 0:
+            partial_Y = partial_label_bank[tar_idx]
+            partial_loss = partial_label_loss(outputs_test, partial_Y, args, mask=batch_selection_mask, smooth=0.1) 
+                
+                
+            
+            # batch_partial_label_Y_acc = partial_Y_evaluation(partial_Y, tar_real)
+            # batch_selected_partial_label_Y_acc = partial_Y_evaluation(partial_Y[batch_selection_indx.to(partial_Y.device)], tar_real[batch_selection_indx.to(tar_real.device)])
+            # batch_self_pred_acc = torch.mean((pred.detach().clone().cpu() == tar_real.cpu()).float())
+            # batch_selected_self_pred_acc = torch.sum((pred.detach().clone().cpu()[batch_selection_indx.cpu()] == tar_real.cpu()[batch_selection_indx.cpu()]).float()) / batch_selection_indx.size()[0]
+            loss += args['partial_coef'] * partial_loss
+            # batch_loss_str += (
+            #         f"[Partial Label Loss]: {args.partial_coef} * {partial_loss.item():.4f}; \nSelf Pred acc: {batch_self_pred_acc:.4f}; Selected Self Pred acc: {batch_selected_self_pred_acc:.4f}; \nPartial Label set acc: {batch_partial_label_Y_acc:.4f}; Selected Partial Label set acc: {batch_selected_partial_label_Y_acc:.4f};Average Partial Label Num: {(partial_Y.sum()/partial_Y.shape[0]):.4f}\n"
+            #     )
+        # print(loss)
+        # exit()
+        with torch.no_grad():
+            if cfg['global_reg'] == 1:
+                t1 = datetime.datetime.now()
+                if cfg['cls_ps'] == True:
+                    _,_,g_yw,g_ys = model(input)
+                else:
+                    _,yw,_,ys = model(input)
+                    _,g_yw,_,g_ys = global_model(input)
+                    # g_yw = nn.Softmax(dim=-1)(g_yw)
+                g_max_p, g_hard_pseudo_label = torch.max(g_yw, dim=-1)
+                # print(thres)
+                # print(g_yw.shape)
+                # g_mask = g_max_p.ge(cfg['threshold'])
+                g_mask = g_max_p.ge(thres)
+                g_yw = g_yw[g_mask]
+                l2+=torch.sum(g_mask==True)
+                
+                # exit()
+                # lable_s = torch.softmax(x_s,dim=1)
+                # g_lable_s = lable_s[g_mask]
+                #########################################
+                max_p2, hard_pseudo_label2 = torch.max(yw, dim=-1)
+                
+                # g_mask = g_max_p.ge(cfg['threshold'])
+                mask2 = max_p2.ge(thres)
+                t2  = datetime.datetime.now()
+        
+                
+                # lable_s = torch.softmax(x_s,dim=1)
+                
+        
+        if cfg['var_reg']:
+            # print(embed_feat.shape)
+            # K = compute_correlation_matrix(embed_feat)
+            # # print(K,K.shape)
+            # # Compute the Frobenius norm of K
+            # frobenius_norm = torch.norm(K, p='fro')
+            # # print(frobenius_norm)
+            # # Compute the loss function LFedDecorr
+            # d_ = K.shape
+            # loss_var = 1/d_[0]**2 * frobenius_norm ** 2
+            # print(loss_var)
+            # exit()
+            # var = torch.var(embed_feat, dim=0)
+            var = torch.var(embed_feat, dim=1)
+            loss_var = torch.mean(var)
+            # print(var.shape,loss_var)
+            # exit()
+        # exit()
+        if pred_cls.shape != psd_label.shape:
+            # psd_label is not one-hot like.
+            psd_label = to_device(psd_label,cfg['device'])
+            psd_label = torch.zeros_like(pred_cls).scatter(1, psd_label.unsqueeze(1), 1)
+        
+        #print("psd_label:",psd_label )
+        mean_pred_cls = torch.mean(pred_cls, dim=0, keepdim=True) #[1, C]
+        reg_loss = - torch.sum(torch.log(mean_pred_cls) * mean_pred_cls)
+        ent_loss = - torch.sum(torch.log(pred_cls) * pred_cls, dim=1).mean()
+        psd_loss = - torch.sum(torch.log(pred_cls) * psd_label, dim=1).mean()
+        
+        #if epoch_idx >= 1.0:
+            # loss = 2.0 * psd_loss
+        #    loss = ent_loss + 1.0 * psd_loss
+        #else:
+        ##################
+        # loss = - reg_loss + ent_loss + 0.5*psd_loss
+        ##################
+        # loss = 0
+         #need to re aadd
+        if cfg['cls_ps']:
+            class_psd_loss = -torch.sum(torch.log(ps_cls) * psd_label, dim=1).mean()
+            loss+=1*class_psd_loss
+            # print(class_psd_loss)
+            # exit()
+        if cfg['var_reg']:
+            print('adding var loss')
+            loss += cfg['var_wt']*loss_var
+            # print(cfg['var_wt'],'varience weight',loss_var)
+        if cfg['FedProx']:
+            t1 = datetime.datetime.now()        # print('local update frdprox')
+            proximal_term = 0.0
+            for w, w_t in zip(model.parameters(), global_model.parameters()):
+                proximal_term += (w - w_t.detach()).norm(2)
+            loss+= (cfg['mu']/ 2) * proximal_term
+            t2 = datetime.datetime.now()
+            Tg+=(t2-t1).total_seconds()
+        # print(loss)
+        # exit()
+        unique_labels = torch.unique(psd_label_).cpu().numpy() 
+        class_cent = torch.zeros(num_classes,embed_feat.shape[0])
+        #batch_centers = torch.zeros(len(unique_labels).embed_feat.shape[1])
+        max_p, hard_pseudo_label = torch.max(pred_cls, dim=-1)
+        # mask = max_p.ge(cfg['threshold'])
+        mask = max_p.ge(thres)
+        embed_feat_masked = embed_feat[mask]
+        pred_cls = pred_cls[mask]
+        psd_label = psd_label[mask]
+        # dym_psd_label  = dym_psd_label[mask]
+
+        #print("loss_reg_dyn:",loss)
+        #==================================================================#
+        # loss = ent_loss + 1* psd_loss + 0.1 * dym_psd_loss - reg_loss + cfg['wt_actloss']*act_loss
+        #==================================================================#
+        #==================================================================#
+        #==================================================================#
+        # lr_scheduler(optimizer, iter_idx, iter_max)
+        # optimizer.zero_grad()
+        #==================================================================#
+        # print(cent.shape,avg_cent.shape)
+        #print("cfg_avg_cent:",cfg['avg_cent'])
+        #avg_cent = torch.zeros(num_classes,embed_feat.shape[1])
+        if cfg['avg_cent'] and avg_cent is not None:
+        #if True:    
+            cent_batch = torch.matmul(torch.transpose(psd_label,0,1), embed_feat)
+            #print("clnt_cent:",cent_batch)
+            cent_batch = cent_batch / (1e-9 + psd_label.sum(axis=0)[:,None])
+            server_cent = torch.squeeze(torch.Tensor(avg_cent))
+            #print("server_cent:",server_cent.shape)
+            clnt_cent = cent_batch[unique_labels]/torch.norm(cent_batch[unique_labels],dim=1,keepdim=True)
+            server_cent = server_cent/torch.norm(server_cent,dim=1,keepdim=True)
+            server_cent = server_cent.to(cfg['device'])
+            server_cent = torch.transpose(server_cent,0,1)
+            #print("server_cent:",server_cent.shape)
+            #print("clnt_cent:",clnt_cent.shape)
+            #server_cent = (server_cent, cfg['device'])
+
+            similarity_mat = torch.matmul(clnt_cent,server_cent)
+            temp = cfg['temp']
+            similarity_mat = torch.exp(similarity_mat/temp)
+            pos_m = torch.diag(similarity_mat)
+            pos_neg_m = torch.sum(similarity_mat,axis = 1)
+            nce_loss = -1.0*torch.sum(torch.log(pos_m/pos_neg_m))
+            # print('nce_loss',nce_loss)
+            loss += cfg['gamma']*nce_loss
+            #print("reg_loss:",reg_loss,"ent_loss:",ent_loss,"psd_loss:",psd_loss,"nce_loss:",nce_loss)
+        if cfg['add_fix'] ==1:
+            # target_prob,target_= torch.max(dym_label, dim=-1)
+            # target_ = dym_label
+            target_l = hard_pseudo_label
+            # print(target_.shape,x_s.shape)
+            lable_s = torch.softmax(x_s,dim=1)
+            target_l = target_l[mask]
+            l1+=torch.sum(g_mask==True)
+            # lable_s = torch.softmax(x_s,dim=1)
+            if cfg['global_reg'] == 1:
+                # t3 = datetime.datetime.now()
+                g_lable_s = lable_s[g_mask]
+            lable_s = lable_s[mask]
+            # lable_s2 = lable_s[mask2]
+            # print(target_.shape,lable_s.shape)
+            # if target_.shape[0] != 0 and lable_s.shape[0]!= 0 :
+            #     # continue
+            #     fix_loss = loss_fn(lable_s,target_.detach())
+            #     # print(loss)
+            #     loss+=cfg['lambda']*fix_loss
+                
+            if cfg['global_reg'] == 1:
+                t3 = datetime.datetime.now()
+                # target_prob,target_= torch.max(dym_label, dim=-1)
+                # target_ = dym_label
+                # lable_s = torch.softmax(x_s,dim=1)
+                # g_lable_s = lable_s[g_mask]
+                g_target_ = g_hard_pseudo_label
+                target_ = hard_pseudo_label
+                # print(target_.shape,x_s.shape)
+                # g_lable_s = torch.softmax(g_ys,dim=1)
+                # g_target_ = g_target_[mask]
+                g_target_ = g_target_[g_mask]
+                # g_lable_s = g_lable_s[mask]
+                # target_ = target_[mask]
+                target_ = target_[g_mask]
+                yw = yw[mask2]
+                l_yw = pred_cls
+                # hg = -torch.sum(torch.log(g_yw.detach())*g_yw.detach(), dim=1).mean()
+                # hk = -torch.sum(torch.log(l_yw.detach())*l_yw.detach(), dim=1).mean()
+                # # print('hk',hk,'hg',hg)
+                # # exit()
+                # wl = 2*(1/(hk+1e-8))/((1/(hk+1e-8)+(1/(hg+1e-8)))+1e-8)
+                # wg = 2*(1/(hg+1e-8))/((1/(hk+1e-8)+(1/(hg+1e-8)))+1e-8)
+                # print('wl',wl,'wg',wg)
+                # exit()
+                # print(target_.shape,lable_s.shape)
+                if g_target_.shape[0] != 0 and g_lable_s.shape[0]!= 0 :
+                    # continue
+                    # g_fix_loss = loss_fn(g_lable_s,g_target_.detach())
+                    # g_fix_loss = loss_fn(g_lable_s,target_.detach())
+                    # g_fix_loss = loss_fn(lable_s,g_target_.detach())
+                    g_fix_loss = loss_fn(g_lable_s,g_target_.detach())
+                    # print(g_fix_loss,'global fix loss')
+                    # exit()
+                    loss+=cfg['g_lambda']*g_fix_loss
+                    # loss+=wg*g_fix_loss
+                t4 = datetime.datetime.now()
+                #######################################
+                # target_2 = hard_pseudo_label2
+                # target_ = hard_pseudo_label
+                
+                # target_2 = target_2[mask]
+                
+                # target_ = target_[mask]
+            
+                # if target_2.shape[0] != 0 and lable_s.shape[0]!= 0 :
+                    
+                #     fix_loss2= loss_fn(lable_s,target_2.detach())
+                
+                #     loss+=1*fix_loss2
+                # print(fix_loss2)
+                ################################################
+                # target_2 = hard_pseudo_label2
+                # target_ = hard_pseudo_label
+                
+                # target_2 = target_2[mask2]
+                
+                # target_ = target_[mask2]
+            
+                # if target_2.shape[0] != 0 and lable_s.shape[0]!= 0 :
+                    
+                #     fix_loss2= loss_fn(lable_s2,target_2.detach())
+                
+                #     loss+=1*fix_loss2
+            if target_l.shape[0] != 0 and lable_s.shape[0]!= 0 :
+                # continue
+                fix_loss = loss_fn(lable_s,target_l.detach())
+                # print(fix_loss)
+                # exit()
+                loss+=cfg['lambda']*fix_loss
+                # print('local fix loss',fix_loss)
+                # loss+=wl*fix_loss
+        
+            
+        # print(loss)
+        # exit()
+        
+        # print('1 global forward-pass time:',((t2-t1)).total_seconds())
+        # exit()         
+        # Tg+= (t2-t1).total_seconds()
+        # exit()
+        optimizer.zero_grad()
+        grad_sum = 0
+        # for k, v in model.backbone_layer.named_parameters():
+        #             # print(k)
+        #             if "bn" in k:
+        #                 pass
+        #             else:
+        #                 # G = v.grad
+        #                 # grad_sum+=G.sum()
+        #                 print(v.grad)
+        # print(grad_sum)
+        # exit()
+        # print(loss.shape)
+        # exit()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+        # for param in model.parameters():
+        #     print(param.device)
+        # optimizer.to(cfg['device'])
+        optimizer.step()
+        # grad_sum = 0
+        # for k, v in model.backbone_layer.named_parameters():
+        #             # print(k)
+        #             if "bn" in k:
+        #                 pass
+        #             else:
+        #                 G = v.grad[0]
+        #                 grad_sum+=G.sum()
+        # print(grad_sum)
+        # exit()
+        if scheduler is not None:
+            # print('scheduler step')
+            scheduler.step()
+    # print('total time for 1 forwad pass through global model:', Tg)
+    # print(l1,l2)
+    # exit()
+            # print('lr at client
+    with torch.no_grad():
+        loss_stack.append(loss.cpu().item())
+        if cfg['cls_ps']:
+            cent = None
+        else:
+            # cent = get_final_centroids(model,test_data_loader,pred_label)
+            cent = None
+        #print("cent here:",cent.shape)
+    
+       
+    train_loss = np.mean(loss_stack)
+    
+    return train_loss,thres
+
+def hcld_train(model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg_cent,id,domain,fwd_pass=False,scheduler = None,client = None,global_model = None,thres=None,cls_ps=None,adpt_thr = None):
+    loss_stack = []
+    num_classes = cfg['target_size']
+    avg_label_feat = torch.zeros(num_classes,256)
+    model.to(cfg["device"])
+    # print(fwd_pass)
+    # exit()
+    # print(global_model)
+    # exit()
+    print(domain)
+    # exit()
+    with torch.no_grad():
+        model.eval()
+        pred_label,updated_threshold = init_psd_label_shot_icml(model,test_data_loader,domain = domain,id = id, adpt_thr = adpt_thr,client_id=id)
+        # print(pred_label)
+        # exit()
+        # if fwd_pass:
+        #     pred_label = init_psd_label_shot_icml(model,test_data_loader)
+        # else:
+        #     # print('entered')
+        #     # exit()
+        #     # pred_label = init_psd_label_shot_icml(model,test_data_loader)
+        #     pred_label = init_psd_label_shot_icml_up(model,test_data_loader,client,id,domain)
+        # #print("len dataloader:",len(dataloader))
+        # print("len pred_label:",len(pred_label))
+    print('threshold',thres)
+    # return None,None
+    if adpt_thr:
+        thres = updated_threshold
+        print('updated threshold',thres)
+    # return None,None
+    model.train()
+    epoch_idx=epoch
+    # print('starting runs okkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk')
+    # for i, input in enumerate(test_data_loader):
+    for i, input in enumerate(train_data_loader):
+        # print(i)
+        input = collate(input)
+        input_size = input['data'].size(0)
+        if input_size<=1:
+            break
+        input['loss_mode'] = cfg['loss_mode']
+        input = to_device(input, cfg['device'])
+        optimizer.zero_grad()
+        pred_label = to_device(pred_label,cfg['device'])
+        psd_label = pred_label[input['id']]
+        psd_label_ = pred_label[input['id']]
+        
+        if cfg['run_hcld']:
+            if cfg['cls_ps']:
+                cls_ps.train()
+                p,embed_feat, pred_cls = model(input)
+                adapt_feat,ps_cls = cls_ps(p)
+            else:
+                embed_feat, pred_cls, fs, xs = model(input)
+        elif cfg['add_fix']==1 and cfg['logit_div'] ==0:
+            if cfg['cls_ps']:
+                p,embed_feat, pred_cls,x_s = model(input)
+                adapt_feat,ps_cls = cls_ps(p)
+                # print(ps_cls.shape,pred_cls.shape)
+                # exit()
+            else:
+                embed_feat, pred_cls,x_s = model(input)
+    
+        elif cfg['add_fix']==1 and cfg['logit_div'] ==1:
+            embed_feat, pred_cls,x,x_s = model(input)
+            x_in = torch.softmax(x/cfg['temp'],dim =1)
+        # print('applying again')
+        # print(embed_feat.shape, fs.shape)
+        # exit()
+        q1 = F.normalize(embed_feat, dim=1)  # Still (32, 256)
+        q2 = F.normalize(fs, dim=1)
+        tau = 0.1*1
+        sim = torch.matmul(q1, q2.t()) / tau   # shape (B, B)
+        loss_hcld = 0.0
+        for i in range(q1.shape[0]):
+            # numerator: exp(sim[i,i])
+            num = torch.exp(sim[i, i])
+            # denominator: sum_j exp(sim[i, j])
+            denom = torch.exp(sim[i]).sum()
+            loss_i = -torch.log(num / denom)
+            loss_hcld += loss_i
+        loss_hcld /=  q1.shape[0]
+        # print(loss_hcld)
+        # exit()
+        with torch.no_grad():
+            if cfg['global_reg'] == 1:
+                if cfg['cls_ps'] == True:
+                    _,_,g_yw,g_ys = model(input)
+                else:
+                    _,yw,ys = model(input)
+                    _,g_yw,g_ys = global_model(input)
+                g_max_p, g_hard_pseudo_label = torch.max(g_yw, dim=-1)
+                # print(thres)
+                # exit()
+                # g_mask = g_max_p.ge(cfg['threshold'])
+                g_mask = g_max_p.ge(thres)
+                g_yw = g_yw[g_mask]
+                # lable_s = torch.softmax(x_s,dim=1)
+                # g_lable_s = lable_s[g_mask]
+                #########################################
+                max_p2, hard_pseudo_label2 = torch.max(yw, dim=-1)
+                
+                # g_mask = g_max_p.ge(cfg['threshold'])
+                mask2 = max_p2.ge(thres)
+        
+        
+                
+                # lable_s = torch.softmax(x_s,dim=1)
+                
+        # print(g_yw.shape)    
+        # exit()
+        #act_loss = sum([item['mean_norm'] for item in list(model.act_stats.values())])
+        #print("psd_label:",psd_label )
+        # print(embed_feat.shape)
+        if cfg['var_reg']:
+            # print(embed_feat.shape)
+            # K = compute_correlation_matrix(embed_feat)
+            # # print(K,K.shape)
+            # # Compute the Frobenius norm of K
+            # frobenius_norm = torch.norm(K, p='fro')
+            # # print(frobenius_norm)
+            # # Compute the loss function LFedDecorr
+            # d_ = K.shape
+            # loss_var = 1/d_[0]**2 * frobenius_norm ** 2
+            # print(loss_var)
+            # exit()
+            # var = torch.var(embed_feat, dim=0)
+            var = torch.var(embed_feat, dim=1)
+            loss_var = torch.mean(var)
+            # print(var.shape,loss_var)
+            # exit()
+        # exit()
+        if pred_cls.shape != psd_label.shape:
+            # psd_label is not one-hot like.
+            psd_label = to_device(psd_label,cfg['device'])
+            psd_label = torch.zeros_like(pred_cls).scatter(1, psd_label.unsqueeze(1), 1)
+        
+        #print("psd_label:",psd_label )
+        mean_pred_cls = torch.mean(pred_cls, dim=0, keepdim=True) #[1, C]
+        reg_loss = - torch.sum(torch.log(mean_pred_cls) * mean_pred_cls)
+        ent_loss = - torch.sum(torch.log(pred_cls) * pred_cls, dim=1).mean()
+        psd_loss = - torch.sum(torch.log(pred_cls) * psd_label, dim=1).mean()
+        
+        #if epoch_idx >= 1.0:
+            # loss = 2.0 * psd_loss
+        #    loss = ent_loss + 1.0 * psd_loss
+        #else:
+        loss = - reg_loss + ent_loss + 0.5*psd_loss
+        loss += loss_hcld
+        # loss = 0
+         #need to re aadd
+        if cfg['cls_ps']:
+            class_psd_loss = -torch.sum(torch.log(ps_cls) * psd_label, dim=1).mean()
+            loss+=1*class_psd_loss
+            # print(class_psd_loss)
+            # exit()
+        if cfg['var_reg']:
+            print('adding var loss')
+            loss += cfg['var_wt']*loss_var
+            # print(cfg['var_wt'],'varience weight',loss_var)
+        if cfg['FedProx']:
+                        # print('local update frdprox')
+            proximal_term = 0.0
+            for w, w_t in zip(model.parameters(), global_model.parameters()):
+                proximal_term += (w - w_t.detach()).norm(2)
+            loss+= (cfg['mu']/ 2) * proximal_term
+        # print(loss)
+        # exit()
+        unique_labels = torch.unique(psd_label_).cpu().numpy() 
+        class_cent = torch.zeros(num_classes,embed_feat.shape[0])
+        #batch_centers = torch.zeros(len(unique_labels).embed_feat.shape[1])
+        max_p, hard_pseudo_label = torch.max(pred_cls, dim=-1)
+        # mask = max_p.ge(cfg['threshold'])
+        mask = max_p.ge(thres)
+        embed_feat_masked = embed_feat[mask]
+        pred_cls = pred_cls[mask]
+        psd_label = psd_label[mask]
+        # dym_psd_label  = dym_psd_label[mask]
+
+        #print("loss_reg_dyn:",loss)
+        #==================================================================#
+        # loss = ent_loss + 1* psd_loss + 0.1 * dym_psd_loss - reg_loss + cfg['wt_actloss']*act_loss
+        #==================================================================#
+        #==================================================================#
+        #==================================================================#
+        # lr_scheduler(optimizer, iter_idx, iter_max)
+        # optimizer.zero_grad()
+        #==================================================================#
+        # print(cent.shape,avg_cent.shape)
+        #print("cfg_avg_cent:",cfg['avg_cent'])
+        #avg_cent = torch.zeros(num_classes,embed_feat.shape[1])
+        if cfg['avg_cent'] and avg_cent is not None:
+        #if True:    
+            cent_batch = torch.matmul(torch.transpose(psd_label,0,1), embed_feat)
+            #print("clnt_cent:",cent_batch)
+            cent_batch = cent_batch / (1e-9 + psd_label.sum(axis=0)[:,None])
+            server_cent = torch.squeeze(torch.Tensor(avg_cent))
+            #print("server_cent:",server_cent.shape)
+            clnt_cent = cent_batch[unique_labels]/torch.norm(cent_batch[unique_labels],dim=1,keepdim=True)
+            server_cent = server_cent/torch.norm(server_cent,dim=1,keepdim=True)
+            server_cent = server_cent.to(cfg['device'])
+            server_cent = torch.transpose(server_cent,0,1)
+            #print("server_cent:",server_cent.shape)
+            #print("clnt_cent:",clnt_cent.shape)
+            #server_cent = (server_cent, cfg['device'])
+
+            similarity_mat = torch.matmul(clnt_cent,server_cent)
+            temp = cfg['temp']
+            similarity_mat = torch.exp(similarity_mat/temp)
+            pos_m = torch.diag(similarity_mat)
+            pos_neg_m = torch.sum(similarity_mat,axis = 1)
+            nce_loss = -1.0*torch.sum(torch.log(pos_m/pos_neg_m))
+            # print('nce_loss',nce_loss)
+            loss += cfg['gamma']*nce_loss
+            #print("reg_loss:",reg_loss,"ent_loss:",ent_loss,"psd_loss:",psd_loss,"nce_loss:",nce_loss)
+        if cfg['add_fix'] ==1:
+            # target_prob,target_= torch.max(dym_label, dim=-1)
+            # target_ = dym_label
+            target_l = hard_pseudo_label
+            # print(target_.shape,x_s.shape)
+            lable_s = torch.softmax(x_s,dim=1)
+            target_l = target_l[mask]
+            # lable_s = torch.softmax(x_s,dim=1)
+            if cfg['global_reg'] == 1:
+                g_lable_s = lable_s[g_mask]
+            lable_s = lable_s[mask]
+            # lable_s2 = lable_s[mask2]
+            # print(target_.shape,lable_s.shape)
+            # if target_.shape[0] != 0 and lable_s.shape[0]!= 0 :
+            #     # continue
+            #     fix_loss = loss_fn(lable_s,target_.detach())
+            #     # print(loss)
+            #     loss+=cfg['lambda']*fix_loss
+                
+            if cfg['global_reg'] == 1:
+                # target_prob,target_= torch.max(dym_label, dim=-1)
+                # target_ = dym_label
+                # lable_s = torch.softmax(x_s,dim=1)
+                # g_lable_s = lable_s[g_mask]
+                g_target_ = g_hard_pseudo_label
+                target_ = hard_pseudo_label
+                # print(target_.shape,x_s.shape)
+                # g_lable_s = torch.softmax(g_ys,dim=1)
+                # g_target_ = g_target_[mask]
+                g_target_ = g_target_[g_mask]
+                # g_lable_s = g_lable_s[mask]
+                # target_ = target_[mask]
+                target_ = target_[g_mask]
+                yw = yw[mask2]
+                l_yw = pred_cls
+                # hg = -torch.sum(torch.log(g_yw.detach())*g_yw.detach(), dim=1).mean()
+                # hk = -torch.sum(torch.log(l_yw.detach())*l_yw.detach(), dim=1).mean()
+                # # print('hk',hk,'hg',hg)
+                # # exit()
+                # wl = 2*(1/(hk+1e-8))/((1/(hk+1e-8)+(1/(hg+1e-8)))+1e-8)
+                # wg = 2*(1/(hg+1e-8))/((1/(hk+1e-8)+(1/(hg+1e-8)))+1e-8)
+                # print('wl',wl,'wg',wg)
+                # exit()
+                # print(target_.shape,lable_s.shape)
+                if g_target_.shape[0] != 0 and g_lable_s.shape[0]!= 0 :
+                    # continue
+                    # g_fix_loss = loss_fn(g_lable_s,g_target_.detach())
+                    # g_fix_loss = loss_fn(g_lable_s,target_.detach())
+                    # g_fix_loss = loss_fn(lable_s,g_target_.detach())
+                    g_fix_loss = loss_fn(g_lable_s,g_target_.detach())
+                    # print(g_fix_loss)
+                    # exit()
+                    loss+=cfg['g_lambda']*g_fix_loss
+                    # loss+=wg*g_fix_loss
+                #######################################
+                # target_2 = hard_pseudo_label2
+                # target_ = hard_pseudo_label
+                
+                # target_2 = target_2[mask]
+                
+                # target_ = target_[mask]
+            
+                # if target_2.shape[0] != 0 and lable_s.shape[0]!= 0 :
+                    
+                #     fix_loss2= loss_fn(lable_s,target_2.detach())
+                
+                #     loss+=1*fix_loss2
+                # print(fix_loss2)
+                ################################################
+                # target_2 = hard_pseudo_label2
+                # target_ = hard_pseudo_label
+                
+                # target_2 = target_2[mask2]
+                
+                # target_ = target_[mask2]
+            
+                # if target_2.shape[0] != 0 and lable_s.shape[0]!= 0 :
+                    
+                #     fix_loss2= loss_fn(lable_s2,target_2.detach())
+                
+                #     loss+=1*fix_loss2
+            if target_l.shape[0] != 0 and lable_s.shape[0]!= 0 :
+                # continue
+                fix_loss = loss_fn(lable_s,target_l.detach())
+                # print(fix_loss)
+                # exit()
+                loss+=cfg['lambda']*fix_loss
+                # loss+=wl*fix_loss
+        
+            
+        # print(loss)
+        # exit()
+        
+                        
+        optimizer.zero_grad()
+        grad_sum = 0
+        # for k, v in model.backbone_layer.named_parameters():
+        #             # print(k)
+        #             if "bn" in k:
+        #                 pass
+        #             else:
+        #                 # G = v.grad
+        #                 # grad_sum+=G.sum()
+        #                 print(v.grad)
+        # print(grad_sum)
+        # exit()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+        # for param in model.parameters():
+        #     print(param.device)
+        # optimizer.to(cfg['device'])
+        optimizer.step()
+        # grad_sum = 0
+        # for k, v in model.backbone_layer.named_parameters():
+        #             # print(k)
+        #             if "bn" in k:
+        #                 pass
+        #             else:
+        #                 G = v.grad[0]
+        #                 grad_sum+=G.sum()
+        # print(grad_sum)
+        # exit()
+        if scheduler is not None:
+            # print('scheduler step')
+            scheduler.step()
+            # print('lr at client
+    with torch.no_grad():
+        loss_stack.append(loss.cpu().item())
+        if cfg['cls_ps']:
+            cent = None
+        else:
+            # cent = get_final_centroids(model,test_data_loader,pred_label)
+            cent = None
+        #print("cent here:",cent.shape)
+    
+       
+    train_loss = np.mean(loss_stack)
+
+    return train_loss,thres
 
 def crco_train(model,tech_model,train_data_loader,test_data_loader,optimizer,epoch,cent,avg_cent,fwd_pass=False,scheduler = None):
     loss_stack = []

@@ -510,6 +510,8 @@ class SFDA(nn.Module):
                 # print(input.keys())
                 # exit()
                 # exit()
+                # print('running')
+                # exit()
                 if cfg['shot3x']:
                     # input['augw'] = torch.cat((input['augw'], input['augs'], input['augw']), dim=0)
                     # input['augw'] = torch.cat((input['augw'], input['augs']), dim=0)
@@ -531,20 +533,39 @@ class SFDA(nn.Module):
                     if cfg['cls_ps']:
                         _,_,x_s = self.f(input['augs'])
                     else:   
-                        _,x_s = self.f(input['augs'])
+                        fs,x_s = self.f(input['augs'])
+                if cfg['run_hcld']==1:
+                    if cfg['cls_ps']:
+                        _,_,x_s = self.f(input['augs'])
+                    else:   
+                        fs,x_s = self.f(input['augs'])
+                if cfg['run_UCon']==1:
+                    if cfg['cls_ps']:
+                        _,_,x_s = self.f(input['augs'])
+                    else:   
+                        fs,x_s = self.f(input['augs'])
                 # return f,x
-                if cfg['add_fix']==0:
+                if cfg['add_fix']==0 and cfg['run_hcld'] ==0 and cfg['run_UCon'] == 0:
                     if cfg['cls_ps']:
                         return p,f,torch.softmax(x,dim=1)
                     else:
                         return f,torch.softmax(x,dim=1)
-                elif cfg['add_fix']==1 and cfg['logit_div'] ==0:
+                elif cfg['add_fix']==1 and cfg['logit_div'] ==0 and  cfg['run_UCon'] == 0:
                     if cfg['cls_ps']:
                         return p,f,torch.softmax(x,dim=1),x_s
                     else:
                         return f,torch.softmax(x,dim=1),x_s
                 elif cfg['add_fix']==1 and cfg['logit_div'] ==1:
                     return f,torch.softmax(x,dim=1),x,x_s
+                elif cfg['run_UCon']==1:
+                    # print('running_hdlc')
+                    # exit()
+                    # return f,torch.softmax(x,dim=1),fs,x_s
+                    return f,x,fs,x_s
+                elif cfg['run_hcld']==1:
+                    # print('running_hdlc')
+                    # exit()
+                    return f,torch.softmax(x,dim=1),fs,x_s
                     # if cfg['logit_div'] == 1:
                     #     print('SFDA softmax2')
                     #     x=torch.softmax(x/2,dim=1)

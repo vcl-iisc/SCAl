@@ -82,8 +82,10 @@ def init_multi_cent_psd_label(model, dataloader, flag=False, flag_NRC=False, con
     # topk_num = max(all_emd_feat.shape[0] // (cfg['target_size'] *3), 1)
     topk_num = max(all_emd_feat.shape[0] // (cfg['target_size'] *1), 1)
     # topk_num = max(all_emd_feat.shape[0] // (cfg['target_size'] * 20), 1)
-    topk_num = 3
+    # topk_num = 3
+    
     print('topk num',topk_num)
+    # exit()
     all_cls_out = torch.cat(cls_out_stack, dim=0)
     _, all_psd_label = torch.max(all_cls_out, dim=1)
     # print(len(all_gt_label))
@@ -97,7 +99,7 @@ def init_multi_cent_psd_label(model, dataloader, flag=False, flag_NRC=False, con
     # print(topk_num)
     # multi_cent_num = 3 if 3<=topk_num else 1
     
-    multi_cent_num = 1
+    multi_cent_num = 5
     # print(multi_cent_num)
     feat_multi_cent = to_device(torch.zeros((cfg['target_size'], multi_cent_num, cfg['embed_feat_dim'])),cfg['device'])
     # feat_multi_cent = to_device(torch.zeros((cfg['target_size'], multi_cent_num,2048)),cfg['device'])
@@ -377,6 +379,7 @@ def init_psd_label_shot_icml(model, dataloader,domain=None, id = None, adpt_thr 
             data = next(iter_test)
             #print("data:",data.keys())
             #inputs = data['augw']
+            
             labels = data['target']
             if cfg['shot3x']:
                 # labels = torch.cat((labels,labels),dim =0 )
@@ -397,20 +400,42 @@ def init_psd_label_shot_icml(model, dataloader,domain=None, id = None, adpt_thr 
             # elif cfg['add_fix'] ==1 and cfg['logit_div'] == 1:
             #     feas, outputs,_,_ = model(input)
             
-            if cfg['add_fix']==0:
+            if cfg['add_fix']==0 and cfg['run_hcld'] == 0 and  cfg['run_UCon'] == 0:
                 if cfg['cls_ps']:
                     # cls_ps.train()
                     p,feas, outputs = model(input)
                     # ps_cls = cls_ps(p)
                 else:
                     feas, outputs = model(input)
-            elif cfg['add_fix']==1 and cfg['logit_div'] ==0:
+            elif cfg['run_hcld']:
+                if cfg['cls_ps']:
+                    # cls_ps.train()
+                    p,feas, outputs = model(input)
+                    # ps_cls = cls_ps(p)
+                else:
+                    feas, outputs, _, _ = model(input)
+            elif cfg['add_fix']==1 and cfg['logit_div'] ==0 and  cfg['run_UCon'] == 0:
                 if cfg['cls_ps']:
                     p,feas, outputs,x_s = model(input)
                     # ps_cls = cls_ps(p)
                 else:
                     feas, outputs,x_s = model(input)
-        
+            elif cfg['add_fix']==1 and cfg['logit_div'] ==0 and  cfg['run_UCon'] == 1:
+                if cfg['cls_ps']:
+                    p,feas, outputs,x_s = model(input)
+                    # ps_cls = cls_ps(p)
+                else:
+                    feas, outputs,fs,x_s = model(input)
+                    # print(feas.shape)
+            elif cfg['add_fix']==0 and cfg['logit_div'] ==0 and  cfg['run_UCon'] == 1:
+                if cfg['cls_ps']:
+                    p,feas, outputs,x_s = model(input)
+                    # ps_cls = cls_ps(p)
+                else:
+                    # print('running UCon')
+                    feas, outputs,fs,x_s = model(input)
+                    # print(feas.shape)
+                    
             elif cfg['add_fix']==1 and cfg['logit_div'] ==1:
                 feas, outputs,x,x_s = model(input)
                 # x_in = torch.softmax(x/cfg['temp'],dim =1)
@@ -471,7 +496,7 @@ def init_psd_label_shot_icml(model, dataloader,domain=None, id = None, adpt_thr 
         skewness_clipped = max(-0.1, min(fisher_skewness, 0.15))  # Clip between -0.1 and 0.15
 
         # Adaptive threshold using Fisher's skewness
-        new_threshold = 0.8 + skewness_clipped
+        new_threshold = cfg['threshold'] + skewness_clipped
         ##########################################################
         # print('dist',mean_median_diff)
         # import matplotlib.pyplot as plt
