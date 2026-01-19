@@ -1,6 +1,6 @@
 <div align="center">
 
-## 🚀 FedSCAl: Leveraging Server and Client Alignment for Unsupervised Federated Source-Free Domain Adaptation (WACV-25 🎉)<br> [webpage](https://vcl-iisc.github.io/FedSCAl/) | [paper](https://www.arxiv.org/pdf/2512.06738) | [video](https://vcl-iisc.github.io/FedSCAl/)<br><br> <p align="left">🎯 Overview</p>
+## 🚀 FedSCAl: Leveraging Server and Client Alignment for Unsupervised Federated Source-Free Domain Adaptation (WACV-26 🎉)<br> [webpage](https://vcl-iisc.github.io/FedSCAl/) | [paper](https://www.arxiv.org/pdf/2512.06738) | [video](https://vcl-iisc.github.io/FedSCAl/)<br><br> <p align="left">🎯 Overview</p>
 </div>
 
 An FL framework leveraging our proposed Server-Client Alignment (SCAl) mechanism to regularize client updates by aligning the clients’ and server model’s predictions.
