@@ -1,24 +1,19 @@
-# FedSCAl: Leveraging Server and Client Alignment for Unsupervised Federated Source-Free Domain Adaptation
+<div align="center">
 
-A guide to setting up, training, and running **SCAl** 
+## 🚀 FedSCAl: Leveraging Server and Client Alignment for Unsupervised Federated Source-Free Domain Adaptation (WACV-25 🎉)<br> [webpage](https://vcl-iisc.github.io/FedSCAl/) | [paper](https://www.arxiv.org/pdf/2512.06738) | [video](https://vcl-iisc.github.io/FedSCAl/)<br><br> <p align="left">🎯 Overview</p>
+</div>
 
----
-
-## 🎯 Overview
-
-an FL framework leveraging our proposed Server-Client Alignment (SCAl) mechanism to regularize client updates by aligning the clients’ and server model’s predictions.
+An FL framework leveraging our proposed Server-Client Alignment (SCAl) mechanism to regularize client updates by aligning the clients’ and server model’s predictions.
 
 This repository supports:
 
 * Source training
-* SCAl:Federated source-Free Domain Adaptation (FFreeDA) 
+* SCAl: Federated source-Free Domain Adaptation (FFreeDA) 
 * SCAL with adaptive or fixed thresholds
 * Baseline (no SCAl)
-* BMD(as base sfda)
+* BMD (as base sfda)
 * ViT-Small and ViT-Base backbones
-* OfficeHome and DomainNet-small dataset experiments
-
----
+* OfficeHome and DomainNet-Small dataset experiments
 
 ## 📂 Directory Structure
 
@@ -76,7 +71,7 @@ python train_classifier_ssDA_target.py \
 
 ---
 
-## SCAL Variants
+## ⭐ SCAL Variants
 
 ### 🟣 Fixed Threshold Instead of Adaptive
 
@@ -133,3 +128,18 @@ python train_classifier_ssDA_target_DN.py \
 * Verify dataset folder structure before training.
 * Ensure GPU selection (`cuda:0, cuda:1, ...`) matches your hardware.
 
+
+## ✏️ Citation
+If you think this project is helpful, please feel free to leave a star⭐️ and cite our paper:
+
+```bibtex
+@InProceedings{yashwanth_2026_WACV,
+        author    = {Yashwanth, M and Koti, Sampath and Singh, Arunabh and Marjit, Shyam and Chakraborty, Anirban},
+        title     = {FedSCAl: Leveraging Server and Client Alignment for Unsupervised Federated Source-Free Domain Adaptation},
+        booktitle = {Proceedings of the Winter Conference on Applications of Computer Vision (WACV)},
+        year      = {2026},
+    }
+```
+## ✉️ Contact
+
+M. Yashwanth: yashwanth06904@gmail.com or yashwanthm@iisc.ac.in
