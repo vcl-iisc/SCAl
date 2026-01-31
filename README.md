@@ -69,43 +69,7 @@ python train_classifier_ssDA_target.py \
     --global_reg 1 --adpt_thr 1
 ```
 
----
-
-## ⭐ SCAL Variants
-
-### 🟣 Fixed Threshold Instead of Adaptive
-
-```bash
---adpt_thr 0 --threshold <set_threshold>
-```
-
-### 🟢 Client Alignment Only (No Global Regularizer)
-
-```bash
---global_reg 0 
-```
-
-### ⚪ Baseline (No SCAl)
-
-```bash
---add_fix 0
-```
-
-### 🔶 BMD(as base sfda)
-
-```bash
---run_shot 0 --add_fix 1 --global_reg 1 --adpt_thr 1
-```
-
-### 🔷 ViT-Base Backbone
-
-```bash
---backbone_arch vit-b
-```
-
----
-
-##  Run SCAL on DomainNet-Small
+### 🔵 SCAL on DomainNet-Small
 
 ```bash
 python train_classifier_ssDA_target_DN.py \
@@ -119,6 +83,17 @@ python train_classifier_ssDA_target_DN.py \
     --tag_ "2020_sketch_0.1_VITs_991_sup-ft-fix" \
     --client_test 1 --pick 'checkpoint' --backbone_arch vit-small
 ```
+
+
+### ⭐ SCAL Variants
+
+| SCAL Variants | added arguments |
+|--------|------------|
+| Fixed Threshold Instead of Adaptive   | `--adpt_thr 0 --threshold <set_threshold>` |
+| Client Alignment Only (No Global Regularizer)   | `--global_reg 0` |
+| Baseline (No SCAl) | `--add_fix 0` |
+| BMD(as base sfda) | `--run_shot 0 --add_fix 1 --global_reg 1 --adpt_thr 1` |
+| ViT-Base Backbone | `--backbone_arch vit-b` |
 
 ---
 
